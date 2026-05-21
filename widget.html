@@ -111,6 +111,43 @@
     }
     .filter-row select:focus { border-color: var(--blue); }
 
+    /* ── Clear all button ── */
+    .btn-clear {
+      height: 36px;
+      padding: 0 14px;
+      background: transparent;
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color .15s, border-color .15s;
+    }
+    .btn-clear:hover { color: var(--red-text); border-color: var(--red-border); }
+
+    /* ── Active filter summary ── */
+    .filter-summary {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 28px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .filter-label { color: var(--muted); flex-shrink: 0; }
+    .filter-chip {
+      background: var(--blue-lt);
+      color: var(--blue);
+      border: 1px solid #b3d4f5;
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
     /* ── Results meta ── */
     .results-meta {
       font-size: 12px;
@@ -309,7 +346,7 @@
   </div>
 
   <div class="filter-row">
-    <select id="sel-degree" aria-label="Degree level" onchange="applyFilters()">
+    <select id="sel-degree" aria-label="Degree level" onchange="doSearch()">
       <option value="">All Degree Levels</option>
       <option value="1">Certificate / &lt;1 year</option>
       <option value="2">Associate's</option>
@@ -319,7 +356,7 @@
       <option value="6">Vocational / Trade</option>
     </select>
 
-    <select id="sel-field" aria-label="Field of study" onchange="applyFilters()">
+    <select id="sel-field" aria-label="Field of study" onchange="doSearch()">
       <option value="">All Fields</option>
       <option value="ai">Artificial Intelligence</option>
       <option value="ml">Machine Learning</option>
@@ -339,7 +376,7 @@
 
   <!-- Row 2: Eligibility filters -->
   <div class="filter-row">
-    <select id="sel-state" aria-label="State" onchange="applyFilters()">
+    <select id="sel-state" aria-label="State" onchange="doSearch()">
       <option value="">All States</option>
       <option>Alabama</option><option>Alaska</option><option>Arizona</option>
       <option>Arkansas</option><option>California</option><option>Colorado</option>
@@ -361,7 +398,7 @@
       <option>Washington D.C.</option>
     </select>
 
-    <select id="sel-amount" aria-label="Award amount" onchange="applyFilters()">
+    <select id="sel-amount" aria-label="Award amount" onchange="doSearch()">
       <option value="">Any Amount</option>
       <option value="0,1000">Under $1,000</option>
       <option value="1000,5000">$1,000 – $5,000</option>
@@ -369,7 +406,7 @@
       <option value="25000,9999999">$25,000+</option>
     </select>
 
-    <select id="sel-award-type" aria-label="Award type" onchange="applyFilters()">
+    <select id="sel-award-type" aria-label="Award type" onchange="doSearch()">
       <option value="">All Types</option>
       <option value="scholarship">Scholarship</option>
       <option value="fellowship">Fellowship</option>
@@ -379,9 +416,9 @@
     </select>
   </div>
 
-  <!-- Row 3: Background / identity filters -->
+  <!-- Row 3: Background / identity + sort + clear -->
   <div class="filter-row">
-    <select id="sel-background" aria-label="Background" onchange="applyFilters()">
+    <select id="sel-background" aria-label="Background" onchange="doSearch()">
       <option value="">No Preference</option>
       <option value="firstgen">First Generation College Student</option>
       <option value="veteran">Veteran / Military</option>
@@ -391,15 +428,20 @@
       <option value="international">International Student</option>
     </select>
 
-    <select id="sel-sort" aria-label="Sort by" onchange="applyFilters()">
+    <select id="sel-sort" aria-label="Sort by" onchange="doSearch()">
       <option value="">Best Match</option>
       <option value="deadline">Deadline (Soonest)</option>
       <option value="amount-hi">Amount (Highest)</option>
       <option value="amount-lo">Amount (Lowest)</option>
       <option value="newest">Newest</option>
     </select>
+
+    <button class="btn-clear" onclick="clearFilters()" aria-label="Clear all filters">
+      ✕ Clear All
+    </button>
   </div>
 
+  <div id="filter-summary" class="filter-summary" aria-live="polite"></div>
   <div id="results-meta" class="results-meta" aria-live="polite"></div>
   <div id="results" role="list"></div>
   <div id="pagination" class="pagination" aria-label="Pagination"></div>
@@ -423,16 +465,14 @@
 "use strict";
 
 // ── API endpoint ──────────────────────────────────────────────────────────────
-// Credentials live server-side in serve.py — never exposed to the browser.
-// When loaded via /widget or via iframe: window.location.origin resolves correctly.
-// If copy-pasting this HTML onto an external site (Weebly raw block), replace
-// the line below with the absolute URL of your server, e.g.:
+// Credentials stay server-side in serve.py — never in the browser.
+// For external embed (Weebly HTML block), change this to your absolute server URL:
 //   const API_URL = "https://your-app.onrender.com/api/scholarships";
 const API_URL = window.location.origin + "/api/scholarships";
 
 const PAGE_SIZE = 20;
-let allResults  = [];   // raw API results for current search
-let filtered    = [];   // after client-side filters
+let allResults  = [];
+let filtered    = [];
 let currentPage = 1;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -441,8 +481,7 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function extractAmount(s) {
   if (!s) return 0;
   const nums = (String(s).match(/[\d,]+/g) || [])
-    .map(n => parseInt(n.replace(/,/g,''), 10))
-    .filter(n => n >= 100);
+    .map(n => parseInt(n.replace(/,/g,''), 10)).filter(n => n >= 100);
   return nums.length ? Math.max(...nums) : 0;
 }
 
@@ -468,19 +507,168 @@ function pick(obj, ...keys) {
   return '';
 }
 
-// ── API fetch (via server-side proxy — no CORS, credentials secured) ─────────
-async function apiSearch(keyword, degreeLevel) {
-  const params = new URLSearchParams({ keyword: keyword || 'scholarship', limit: 100 });
-  if (degreeLevel) params.set('trainingProgramLength', degreeLevel);
+// ── Read all current filter values from the DOM ───────────────────────────────
+function getFilters() {
+  return {
+    keyword: document.getElementById('keyword').value.trim(),
+    degree:  document.getElementById('sel-degree').value,
+    field:   document.getElementById('sel-field').value,
+    state:   document.getElementById('sel-state').value,
+    amtVal:  document.getElementById('sel-amount').value,
+    typeVal: document.getElementById('sel-award-type').value,
+    bgVal:   document.getElementById('sel-background').value,
+    sortVal: document.getElementById('sel-sort').value,
+  };
+}
 
-  const resp = await fetch(`${API_URL}?${params}`);
+// ── Build URLSearchParams for the API from the current filters ────────────────
+// Field-of-study primary keywords (used as keyword fallback when search box is empty)
+const FIELD_PRIMARY = {
+  ai: 'artificial intelligence', ml: 'machine learning', ds: 'data science',
+  cs: 'computer science', business: 'business', strategy: 'technology strategy',
+  cyber: 'cybersecurity', engineering: 'engineering', healthcare: 'healthcare',
+  education: 'education', law: 'law', arts: 'arts humanities', social: 'social science',
+};
 
-  if (!resp.ok) {
-    let detail = '';
-    try { const j = await resp.json(); detail = j.error || ''; } catch { /* ignore */ }
-    throw new Error(`Server returned ${resp.status}${detail ? ': ' + detail : ''}`);
+const SORT_MAP = {
+  'deadline':  { sortColumns: 'deadline', sortOrder: '0' },
+  'amount-hi': { sortColumns: 'amount',   sortOrder: '1' },
+  'amount-lo': { sortColumns: 'amount',   sortOrder: '0' },
+  'newest':    { sortColumns: 'dateAdded', sortOrder: '1' },
+};
+
+function buildApiParams(f) {
+  const p = new URLSearchParams();
+
+  // keyword: user text → field primary keyword → generic fallback
+  const kw = f.keyword || (f.field ? FIELD_PRIMARY[f.field] : '') || 'scholarship';
+  p.set('keyword', kw);
+  p.set('limit', '50');
+
+  if (f.degree)  p.set('trainingProgramLength', f.degree);
+  if (f.state)   p.set('location', f.state);
+
+  if (f.amtVal) {
+    const [lo, hi] = f.amtVal.split(',');
+    p.set('awardAmountMin', lo);
+    p.set('awardAmountMax', hi);
   }
-  return resp.json();
+
+  if (f.typeVal) p.set('typeOfAward', f.typeVal);
+
+  const s = SORT_MAP[f.sortVal];
+  if (s) { p.set('sortColumns', s.sortColumns); p.set('sortOrder', s.sortOrder); }
+
+  return p;
+}
+
+// ── Client-side filters (applied on top of API results) ───────────────────────
+// Field keywords for client-side text matching (belt-and-suspenders on API)
+const FIELD_KEYWORDS = {
+  ai:          ['artificial intelligence', ' ai ', 'ai/ml'],
+  ml:          ['machine learning', 'deep learning', 'neural network', 'nlp'],
+  ds:          ['data science', 'data analytics', 'data analysis'],
+  cs:          ['computer science', 'software', 'programming', 'coding'],
+  business:    ['business', 'management', 'administration', 'mba', 'finance'],
+  strategy:    ['technology strategy', 'tech strategy', 'strategic'],
+  cyber:       ['cybersecurity', 'cyber security', 'information security'],
+  engineering: ['engineering', 'mechanical', 'electrical', 'civil', 'aerospace'],
+  healthcare:  ['healthcare', 'health care', 'medical', 'nursing', 'medicine'],
+  education:   ['education', 'teaching', 'teacher', 'curriculum'],
+  law:         ['law', 'legal', 'justice', 'paralegal'],
+  arts:        ['arts', 'humanities', 'history', 'literature', 'philosophy', 'music'],
+  social:      ['social science', 'sociology', 'psychology', 'political science'],
+};
+
+const BG_KEYWORDS = {
+  firstgen:      ['first-generation', 'first gen', 'first generation'],
+  veteran:       ['veteran', 'military', 'armed forces', 'active duty'],
+  singleparent:  ['single parent', 'single mother', 'single father'],
+  displaced:     ['displaced worker', 'laid off', 'workforce reentry', 'career change'],
+  adultlearner:  ['adult learner', 'non-traditional', 'returning student', 'mature student'],
+  international: ['international student', 'international students', 'study abroad'],
+};
+
+function applyClientFilters(results, f) {
+  let res = [...results];
+
+  // Field: only apply client-side when keyword is also set (avoids over-filtering
+  // results that already came back from an API field-keyword search)
+  if (f.field && f.keyword && FIELD_KEYWORDS[f.field]) {
+    const terms = FIELD_KEYWORDS[f.field];
+    res = res.filter(s => {
+      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
+                   s.ScholarshipDescription, s.Provider, s.provider].join(' ').toLowerCase();
+      return terms.some(t => hay.includes(t));
+    });
+  }
+
+  // Background (always client-side — API has no equivalent)
+  if (f.bgVal && BG_KEYWORDS[f.bgVal]) {
+    const terms = BG_KEYWORDS[f.bgVal];
+    res = res.filter(s => {
+      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
+                   s.ScholarshipDescription].join(' ').toLowerCase();
+      return terms.some(t => hay.includes(t));
+    });
+  }
+
+  // Amount: client-side belt-and-suspenders on top of API awardAmountMin/Max
+  if (f.amtVal) {
+    const [lo, hi] = f.amtVal.split(',').map(Number);
+    res = res.filter(s => {
+      const n = extractAmount(pick(s, 'Amount','amount','AwardAmount'));
+      return n === 0 || (n >= lo && n <= hi);
+    });
+  }
+
+  return res;
+}
+
+// ── Filter summary bar ────────────────────────────────────────────────────────
+const DEGREE_LABELS = {
+  '1':'Certificate', '2':"Associate's", '3':"Bachelor's",
+  '4':'Graduate', '5':'Doctoral', '6':'Vocational',
+};
+const FIELD_LABELS = {
+  ai:'AI', ml:'Machine Learning', ds:'Data Science', cs:'Computer Science',
+  business:'Business', strategy:'Tech Strategy', cyber:'Cybersecurity',
+  engineering:'Engineering', healthcare:'Healthcare', education:'Education',
+  law:'Law', arts:'Arts & Humanities', social:'Social Sciences',
+};
+const AMT_LABELS = {
+  '0,1000':'Under $1K', '1000,5000':'$1K–$5K',
+  '5000,25000':'$5K–$25K', '25000,9999999':'$25K+',
+};
+const TYPE_LABELS = {
+  scholarship:'Scholarship', fellowship:'Fellowship',
+  grant:'Grant', loan:'Loan', prize:'Prize/Competition',
+};
+const BG_LABELS = {
+  firstgen:'First Gen', veteran:'Veteran', singleparent:'Single Parent',
+  displaced:'Displaced Worker', adultlearner:'Adult Learner', international:'International',
+};
+const SORT_LABELS = {
+  deadline:'Deadline ↑', 'amount-hi':'Amount ↓', 'amount-lo':'Amount ↑', newest:'Newest',
+};
+
+function updateFilterSummary(f, count) {
+  const parts = [];
+  if (f.keyword)  parts.push(`"${f.keyword}"`);
+  if (f.degree)   parts.push(DEGREE_LABELS[f.degree]  || f.degree);
+  if (f.field)    parts.push(FIELD_LABELS[f.field]     || f.field);
+  if (f.state)    parts.push(f.state);
+  if (f.amtVal)   parts.push(AMT_LABELS[f.amtVal]      || f.amtVal);
+  if (f.typeVal)  parts.push(TYPE_LABELS[f.typeVal]    || f.typeVal);
+  if (f.bgVal)    parts.push(BG_LABELS[f.bgVal]        || f.bgVal);
+  if (f.sortVal)  parts.push(SORT_LABELS[f.sortVal]    || '');
+
+  const el = document.getElementById('filter-summary');
+  if (!parts.length) { el.innerHTML = ''; return; }
+
+  const chips = parts.map(p => `<span class="filter-chip">${esc(p)}</span>`).join('');
+  el.innerHTML =
+    `<span class="filter-label">Showing ${count.toLocaleString()} results for:</span> ${chips}`;
 }
 
 // ── Render one card ───────────────────────────────────────────────────────────
@@ -564,7 +752,7 @@ function renderVisible() {
   const box   = document.getElementById('results');
 
   if (!page.length) {
-    box.innerHTML  = '<div class="empty">No scholarships match these filters.<br><small>Try adjusting your search or clearing filters.</small></div>';
+    box.innerHTML  = '<div class="empty">No scholarships match these filters.<br><small>Try adjusting your search or clicking "Clear All".</small></div>';
     meta.innerHTML = '';
     document.getElementById('pagination').innerHTML = '';
     return;
@@ -575,144 +763,36 @@ function renderVisible() {
   renderPagination();
 }
 
-// ── Field-of-study keyword map ────────────────────────────────────────────────
-const FIELD_KEYWORDS = {
-  ai:          ['artificial intelligence', ' ai ', 'ai/ml', 'ai research'],
-  ml:          ['machine learning', 'deep learning', 'neural network', 'nlp'],
-  ds:          ['data science', 'data analytics', 'data analysis', 'big data'],
-  cs:          ['computer science', 'software', 'programming', 'coding'],
-  business:    ['business', 'management', 'administration', 'mba', 'finance', 'accounting'],
-  strategy:    ['technology strategy', 'tech strategy', 'strategic management', 'strategy'],
-  cyber:       ['cybersecurity', 'cyber security', 'information security', 'network security'],
-  engineering: ['engineering', 'mechanical', 'electrical', 'civil', 'aerospace'],
-  healthcare:  ['healthcare', 'health care', 'medical', 'nursing', 'medicine', 'pharmacy', 'public health'],
-  education:   ['education', 'teaching', 'teacher', 'pedagogy', 'curriculum'],
-  law:         ['law', 'legal', 'justice', 'paralegal', 'pre-law'],
-  arts:        ['arts', 'humanities', 'history', 'literature', 'philosophy', 'music', 'theater', 'film'],
-  social:      ['social science', 'sociology', 'psychology', 'political science', 'anthropology', 'economics'],
-};
-
-// ── Background keyword map ────────────────────────────────────────────────────
-const BG_KEYWORDS = {
-  firstgen:      ['first-generation', 'first gen', 'first generation', 'firstgen'],
-  veteran:       ['veteran', 'military', 'armed forces', 'active duty', 'gi bill'],
-  singleparent:  ['single parent', 'single mother', 'single father', 'single mom', 'single dad'],
-  displaced:     ['displaced worker', 'laid off', 'workforce reentry', 'career change', 'career transition'],
-  adultlearner:  ['adult learner', 'non-traditional', 'nontraditional', 'returning student', 'mature student', 'adult student'],
-  international: ['international student', 'international students', 'study abroad'],
-};
-
-// ── Client-side filter + sort ─────────────────────────────────────────────────
-function applyFilters() {
-  const stateVal   = document.getElementById('sel-state').value.toLowerCase();
-  const amtVal     = document.getElementById('sel-amount').value;
-  const fieldVal   = document.getElementById('sel-field').value;
-  const typeVal    = document.getElementById('sel-award-type').value;
-  const bgVal      = document.getElementById('sel-background').value;
-  const sortVal    = document.getElementById('sel-sort').value;
-
-  let res = [...allResults];
-
-  // Field of study
-  if (fieldVal && FIELD_KEYWORDS[fieldVal]) {
-    const terms = FIELD_KEYWORDS[fieldVal];
-    res = res.filter(s => {
-      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
-                   s.ScholarshipDescription, s.Provider, s.provider].join(' ').toLowerCase();
-      return terms.some(t => hay.includes(t));
-    });
-  }
-
-  // State (text match — also passes scholarships open to all states)
-  if (stateVal) {
-    res = res.filter(s => {
-      const hay = [s.Description, s.description, s.ScholarshipDescription,
-                   s.ScholarshipName, s.Provider, s.Location, s.location, s.State
-                  ].join(' ').toLowerCase();
-      return hay.includes(stateVal) ||
-             hay.includes('all states') ||
-             hay.includes('nationwide') ||
-             hay.includes('any state');
-    });
-  }
-
-  // Amount range
-  if (amtVal) {
-    const [lo, hi] = amtVal.split(',').map(Number);
-    res = res.filter(s => {
-      const n = extractAmount(pick(s, 'Amount','amount','AwardAmount'));
-      return n === 0 || (n >= lo && n <= hi);
-    });
-  }
-
-  // Award type
-  if (typeVal) {
-    const term = typeVal === 'prize' ? ['prize', 'competition', 'contest', 'award']
-                                     : [typeVal];
-    res = res.filter(s => {
-      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
-                   s.ScholarshipDescription].join(' ').toLowerCase();
-      return term.some(t => hay.includes(t));
-    });
-  }
-
-  // Background / identity
-  if (bgVal && BG_KEYWORDS[bgVal]) {
-    const terms = BG_KEYWORDS[bgVal];
-    res = res.filter(s => {
-      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
-                   s.ScholarshipDescription].join(' ').toLowerCase();
-      return terms.some(t => hay.includes(t));
-    });
-  }
-
-  // Sort
-  const far = new Date(9999, 0);
-  if (sortVal === 'deadline') {
-    res.sort((a, b) => {
-      const da = parseDate(pick(a, 'DeadlineDate','deadlineDate','Deadline')) || far;
-      const db = parseDate(pick(b, 'DeadlineDate','deadlineDate','Deadline')) || far;
-      return da - db;
-    });
-  } else if (sortVal === 'amount-hi') {
-    res.sort((a, b) =>
-      extractAmount(pick(b,'Amount','amount')) - extractAmount(pick(a,'Amount','amount')));
-  } else if (sortVal === 'amount-lo') {
-    res.sort((a, b) => {
-      const na = extractAmount(pick(a,'Amount','amount'));
-      const nb = extractAmount(pick(b,'Amount','amount'));
-      if (!na && !nb) return 0;
-      if (!na) return 1; if (!nb) return -1;
-      return na - nb;
-    });
-  }
-  // 'newest' and '' (best match) use original API order — no sort needed
-
-  filtered    = res;
-  currentPage = 1;
-  renderVisible();
-}
-
-// ── Main search ───────────────────────────────────────────────────────────────
+// ── Main search — fresh API call on every invocation ─────────────────────────
 async function doSearch() {
-  const keyword = document.getElementById('keyword').value.trim();
-  const degree  = document.getElementById('sel-degree').value;
-  const box     = document.getElementById('results');
-  const meta    = document.getElementById('results-meta');
+  const f      = getFilters();
+  const params = buildApiParams(f);
+  const box    = document.getElementById('results');
+  const meta   = document.getElementById('results-meta');
+  const sumEl  = document.getElementById('filter-summary');
 
   box.innerHTML  = '<div class="loading"><div class="spinner"></div><p>Searching scholarships…</p></div>';
   meta.innerHTML = '';
+  sumEl.innerHTML = '';
   document.getElementById('pagination').innerHTML = '';
 
   try {
-    const data = await apiSearch(keyword, degree);
-    allResults = data.Scholarships || data.scholarships || data.ScholarshipList || [];
-    if (!allResults.length && !data.Count) {
-      // Some error responses look like success — check for expected shape
-      box.innerHTML = '<div class="empty">No scholarships found for this search.<br><small>Try a different keyword.</small></div>';
-      return;
+    const resp = await fetch(`${API_URL}?${params}`);
+    if (!resp.ok) {
+      let detail = '';
+      try { const j = await resp.json(); detail = j.error || ''; } catch { /* ignore */ }
+      throw new Error(`Server returned ${resp.status}${detail ? ': ' + detail : ''}`);
     }
-    applyFilters();
+    const data = await resp.json();
+    allResults = data.Scholarships || data.scholarships || data.ScholarshipList || [];
+
+    // Apply client-side filters (field, background, amount belt-and-suspenders)
+    filtered    = applyClientFilters(allResults, f);
+    currentPage = 1;
+
+    updateFilterSummary(f, filtered.length);
+    renderVisible();
+
   } catch (err) {
     const isNetwork = err.message.toLowerCase().includes('failed to fetch') ||
                       err.message.toLowerCase().includes('networkerror');
@@ -720,22 +800,30 @@ async function doSearch() {
       <div class="error-box">
         <strong>Could not load scholarships</strong><br><br>
         ${isNetwork
-          ? `<b>Network error</b> — could not reach the scholarship API server.<br><br>
-             Make sure <code>serve.py</code> is running and that <code>API_URL</code>
-             at the top of this file points to your server.<br>
-             Current: <code>${esc(API_URL)}</code>`
-          : `Error: ${esc(err.message)}`
-        }
+          ? `<b>Network error</b> — could not reach the scholarship API server.<br>
+             Make sure <code>serve.py</code> is running and <code>API_URL</code>
+             points to your server. Current: <code>${esc(API_URL)}</code>`
+          : `Error: ${esc(err.message)}`}
       </div>`;
   }
 }
 
-// Enter key on search box
+// ── Clear all filters and run a fresh blank search ────────────────────────────
+function clearFilters() {
+  document.getElementById('keyword').value = '';
+  ['sel-degree','sel-field','sel-state','sel-amount',
+   'sel-award-type','sel-background','sel-sort'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  doSearch();
+}
+
+// Enter key on the keyword box triggers a new search
 document.getElementById('keyword').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
 });
 
-// Auto-search on load
+// Initial load
 doSearch();
 </script>
 

@@ -98,9 +98,8 @@ def cos_proxy():
             503,
         )
 
-    # Forward all query params from the browser unchanged
+    # Forward all query params from the browser completely unchanged — no overrides
     params = dict(request.args)
-    params.setdefault("limit", "100")
 
     try:
         resp = _req.get(
