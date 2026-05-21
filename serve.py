@@ -136,7 +136,7 @@ def _fetch_cos_training(user_id: str, token: str, keyword: str, location: str = 
     """
     url = (f"https://api.careeronestop.org/v1/training/{user_id}/scholarship"
            f"?keyword={_url_quote(keyword or 'scholarship')}"
-           f"&trainingProgramLength=4&sortColumns=1&sortOrder=0&enableMetaData=true")
+           f"&trainingProgramLength=4&sortColumns=1&sortOrder=0&enableMetaData=true&limit=50")
     if location:
         url += f"&location={_url_quote(location)}"
     print(f"[COS-Training] GET {url}")
@@ -414,8 +414,9 @@ def api_health():
     # ── Ping CareerOneStop Training endpoint (not /scholarship — that 404s) ──
     if user_id and token:
         test_url = (f"https://api.careeronestop.org/v1/training/{user_id}/scholarship"
-                    f"?keyword=scholarship&trainingProgramLength=4&sortColumns=1&sortOrder=0"
-                    f"&enableMetaData=true")
+                    f"?keyword=nursing&location=Michigan"
+                    f"&trainingProgramLength=4&sortColumns=1&sortOrder=0"
+                    f"&enableMetaData=true&limit=10")
         result["cos_training_test_url"] = test_url
         print(f"[health] COS-Training ping: {test_url}")
         try:
