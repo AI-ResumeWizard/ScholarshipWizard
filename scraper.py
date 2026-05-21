@@ -211,6 +211,7 @@ CURATED = [
         "amount": "Up to $5,000",
         "deadline": "Annual – check jvsdetroit.org",
         "url": "https://www.jvsdetroit.org/scholarship/",
+        "source_url": "https://www.jvsdetroit.org/scholarship/",
         "score": 9,
         "score_reasons": ["Jewish identity — direct match", "Michigan resident", "graduate student"],
     },
@@ -219,7 +220,8 @@ CURATED = [
         "provider": "Jewish Federation of Metropolitan Detroit",
         "amount": "Varies",
         "deadline": "Rolling – contact jewishdetroit.org",
-        "url": "https://www.jewishdetroit.org/",
+        "url": "https://www.jewishdetroit.org/jewish-life/jewish-education/scholarship-opportunities/",
+        "source_url": "https://www.jewishdetroit.org/",
         "score": 8,
         "score_reasons": ["Jewish identity — direct match", "Michigan resident"],
     },
@@ -229,15 +231,17 @@ CURATED = [
         "amount": "$1,000–$5,000",
         "deadline": "March 31 annually",
         "url": "https://www.bnaibrith.org/scholarship.html",
+        "source_url": "https://www.bnaibrith.org/scholarship.html",
         "score": 8,
         "score_reasons": ["Jewish identity — direct match", "graduate student"],
     },
     {
-        "title": "American Jewish Committee (AJC) Fellowship",
+        "title": "American Jewish Committee (AJC) – Fellowships",
         "provider": "American Jewish Committee",
         "amount": "Varies",
-        "deadline": "Annual – check ajc.org",
-        "url": "https://www.ajc.org/",
+        "deadline": "Annual – check ajc.org/careers",
+        "url": "https://www.ajc.org/careers-fellowships",
+        "source_url": "https://www.ajc.org/",
         "score": 7,
         "score_reasons": ["Jewish identity", "policy/strategy focus — profile match"],
     },
@@ -247,6 +251,7 @@ CURATED = [
         "amount": "Up to $2,500",
         "deadline": "Annual – check aarp.org",
         "url": "https://www.aarp.org/aarp-foundation/our-work/income/scholarships/",
+        "source_url": "https://www.aarp.org/aarp-foundation/our-work/income/scholarships/",
         "score": 9,
         "score_reasons": ["Adult learner / 50+ — direct match", "graduate school"],
     },
@@ -255,7 +260,8 @@ CURATED = [
         "provider": "Schmidt Futures",
         "amount": "Up to $100,000",
         "deadline": "Annual – check ai2050.schmidtfutures.com",
-        "url": "https://ai2050.schmidtfutures.com/",
+        "url": "https://ai2050.schmidtfutures.com/apply/",
+        "source_url": "https://ai2050.schmidtfutures.com/",
         "score": 8,
         "score_reasons": ["AI strategy focus — strongest field match", "research-oriented"],
     },
@@ -265,6 +271,7 @@ CURATED = [
         "amount": "Varies",
         "deadline": "Contact graduate.wfu.edu",
         "url": "https://graduate.wfu.edu/financial-support/",
+        "source_url": "https://graduate.wfu.edu/financial-support/",
         "score": 8,
         "score_reasons": ["Currently enrolled at Wake Forest", "ask program director directly"],
     },
@@ -273,7 +280,8 @@ CURATED = [
         "provider": "Wake Forest University",
         "amount": "Tuition + stipend",
         "deadline": "Rolling",
-        "url": "https://business.wfu.edu/",
+        "url": "https://business.wfu.edu/students/scholarships-and-fellowships/",
+        "source_url": "https://business.wfu.edu/",
         "score": 7,
         "score_reasons": ["Enrolled MS student", "departmental assistantships often unadvertised"],
     },
@@ -282,7 +290,8 @@ CURATED = [
         "provider": "National Science Foundation",
         "amount": "$37,000/year + tuition",
         "deadline": "October annually",
-        "url": "https://www.nsfgrfp.org/",
+        "url": "https://www.nsfgrfp.org/applicants/",
+        "source_url": "https://www.nsfgrfp.org/",
         "score": 6,
         "score_reasons": ["Graduate AI/STEM", "highly competitive — strong application story possible"],
     },
@@ -292,6 +301,7 @@ CURATED = [
         "amount": "Stipend + travel",
         "deadline": "Annual cycles – check energy.gov",
         "url": "https://science.osti.gov/University-and-Grants-Office/Students-and-Early-Career-Scientists/Graduate-Student-Research-Program",
+        "source_url": "https://science.osti.gov/University-and-Grants-Office/Students-and-Early-Career-Scientists/Graduate-Student-Research-Program",
         "score": 5,
         "score_reasons": ["Graduate AI/STEM", "US federal fellowship"],
     },
@@ -300,7 +310,8 @@ CURATED = [
         "provider": "Ohio State University Alumni Association",
         "amount": "Varies",
         "deadline": "Check ohiostatealumni.org",
-        "url": "https://www.ohiostatealumni.org/",
+        "url": "https://www.ohiostatealumni.org/s/664/alumni/landing.aspx",
+        "source_url": "https://www.ohiostatealumni.org/",
         "score": 6,
         "score_reasons": ["Ohio State alumnus — direct match"],
     },
@@ -310,6 +321,7 @@ CURATED = [
         "amount": "$3,000–$5,000",
         "deadline": "February annually",
         "url": "https://www.mcwt.org/scholarships",
+        "source_url": "https://www.mcwt.org/scholarships",
         "score": 4,
         "score_reasons": ["Michigan resident", "technology field — note: check gender eligibility"],
     },
@@ -403,6 +415,30 @@ def resolve_link(href, base_url):
     return base_url
 
 
+def best_link(item, base_url):
+    """Return the most specific scholarship-related href found in an element."""
+    # Prefer links whose href suggests a specific resource page
+    PRIORITY_PATTERNS = [
+        r'/scholarship', r'/fellowship', r'/grant', r'/award',
+        r'/apply', r'/application', r'/program', r'/fund',
+    ]
+    links = item.find_all("a", href=True)
+    for pat in PRIORITY_PATTERNS:
+        for a in links:
+            href = a.get("href", "")
+            if re.search(pat, href, re.IGNORECASE):
+                resolved = resolve_link(href, base_url)
+                # Prefer links that go somewhere other than the listing page itself
+                if resolved != base_url:
+                    return resolved
+    # Fallback: first link that differs from the base listing URL
+    for a in links:
+        resolved = resolve_link(a.get("href", ""), base_url)
+        if resolved != base_url:
+            return resolved
+    return base_url
+
+
 # ── Phase 1: Scraping ─────────────────────────────────────────────────────────
 def fetch(url):
     r = requests.get(url, headers=HEADERS, timeout=20)
@@ -420,15 +456,16 @@ def scrape_list(source):
         if not title or len(title) < 8:
             continue
         raw = item.get_text(" ", strip=True)[:500]
-        link_el = item.find("a", href=True)
         amount_el = item.select_one(source["amount_selector"]) if source.get("amount_selector") else None
         deadline_el = item.select_one(source["deadline_selector"]) if source.get("deadline_selector") else None
+        direct_url = best_link(item, source["url"])
         results.append({
             "title": title[:120],
             "provider": source["name"],
             "amount": (amount_el.get_text(strip=True) if amount_el else None) or dollar_in(raw) or "Varies",
             "deadline": (deadline_el.get_text(strip=True) if deadline_el else None) or date_in(raw) or "Check website",
-            "url": resolve_link(link_el["href"] if link_el else None, source["url"]),
+            "url": direct_url,
+            "source_url": source["url"],
             "raw_text": raw,
             "source": source["name"],
         })
@@ -450,13 +487,21 @@ def scrape_article(source):
             context_parts.append(sib.get_text(" ", strip=True))
         context = " ".join(context_parts)[:400]
         combined = title + " " + context
-        link_el = h.find("a", href=True) or h.find_next("a", href=True)
+        # Wrap heading + siblings in a container for best_link
+        from bs4 import Tag
+        container = h.parent if isinstance(h.parent, Tag) else h
+        direct_url = best_link(container, source["url"])
+        # Prefer a link directly on the heading
+        h_link = h.find("a", href=True)
+        if h_link:
+            direct_url = resolve_link(h_link["href"], source["url"])
         results.append({
             "title": title[:120],
             "provider": source["name"],
             "amount": dollar_in(combined) or "See listing",
             "deadline": date_in(combined) or "Check website",
-            "url": resolve_link(link_el["href"] if link_el else None, source["url"]),
+            "url": direct_url,
+            "source_url": source["url"],
             "raw_text": combined[:500],
             "source": source["name"],
         })
@@ -478,13 +523,14 @@ def scrape_direct(source):
         for sib in item.find_next_siblings()[:3]:
             raw += " " + sib.get_text(" ", strip=True)
         raw = raw[:500]
-        link_el = item.find("a", href=True) or item.find_next("a", href=True)
+        direct_url = best_link(item, source["url"])
         results.append({
             "title": title[:120],
             "provider": source["name"],
             "amount": dollar_in(raw) or "See page",
             "deadline": date_in(raw) or "Check website",
-            "url": resolve_link(link_el["href"] if link_el else None, source["url"]),
+            "url": direct_url,
+            "source_url": source["url"],
             "raw_text": raw,
             "source": source["name"],
         })

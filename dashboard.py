@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from datetime import date, datetime, timedelta
+from urllib.parse import quote as _url_quote, urlparse as _urlparse
 
 import streamlit as st
 
@@ -109,6 +110,21 @@ def is_rolling(s):
     return "rolling" in str(s.get("deadline", "")).lower()
 
 
+def is_homepage_url(url):
+    """True when the URL path carries no scholarship-specific info (root domain only)."""
+    if not url or url in ("#", ""):
+        return True
+    try:
+        return _urlparse(url).path.rstrip("/") == ""
+    except Exception:
+        return False
+
+
+def _safe_url(url):
+    """Escape URL for safe embedding in HTML attributes and JS strings."""
+    return re.sub(r"[\"'<>`\n\r]", "", url or "")
+
+
 # ── Live re-scoring ───────────────────────────────────────────────────────────
 def compute_score(s, pf):
     cats = s.get("cats", {})
@@ -166,26 +182,50 @@ def score_label(n):
     return "HIGH" if n >= 8 else ("MED" if n >= 5 else "LOW")
 
 def render_card(s):
-    score   = s.get("score", 0)
-    reasons = s.get("score_reasons", [])
-    cats    = s.get("cats", {})
-    color   = score_color(score)
+    score    = s.get("score", 0)
+    reasons  = s.get("score_reasons", [])
+    cats     = s.get("cats", {})
+    color    = score_color(score)
+    url      = s.get("url", "") or ""
+    title    = s.get("title", "Untitled")
+    provider = s.get("provider", "")
+    homepage = is_homepage_url(url)
+    src_url  = s.get("source_url", "")
+
+    # Google fallback search URL
+    gq  = _url_quote(f"{title} {provider} scholarship apply")
+    goo = f"https://www.google.com/search?q={gq}"
+
+    # URL safe for HTML attributes / JS (strip chars that break quoting)
+    su   = _safe_url(url)
+    su_g = _safe_url(goo)
+    url_disp = (url[:65] + "…") if len(url) > 68 else url
 
     with st.container(border=True):
         left, right = st.columns([5, 2])
+
         with left:
-            badge = (
+            # ── Badge row ────────────────────────────────────────────────────
+            badges = (
                 f'<span style="background:{color};color:#fff;padding:3px 10px;'
                 f'border-radius:12px;font-size:12px;font-weight:700;">'
                 f'{score_label(score)} {score}/10</span>'
             )
             if s.get("source") == "curated":
-                badge += ('&nbsp;<span style="background:#e3f2fd;color:#1565c0;'
-                          'padding:3px 9px;border-radius:12px;font-size:11px;'
-                          'font-weight:600;">CURATED</span>')
-            st.markdown(badge, unsafe_allow_html=True)
-            st.markdown(f"**{s['title']}**")
-            st.caption(s.get("provider", ""))
+                badges += ('&nbsp;<span style="background:#e3f2fd;color:#1565c0;'
+                           'padding:3px 9px;border-radius:12px;font-size:11px;'
+                           'font-weight:600;">CURATED</span>')
+            if homepage:
+                badges += ('&nbsp;<span style="background:#fff3cd;color:#856404;'
+                           'padding:3px 9px;border-radius:12px;font-size:11px;'
+                           'font-weight:600;" title="URL points to a homepage — '
+                           'use Search Google to find the direct page">⚠ Verify link</span>')
+            st.markdown(badges, unsafe_allow_html=True)
+
+            st.markdown(f"**{title}**")
+            st.caption(provider)
+
+            # ── Score bar ────────────────────────────────────────────────────
             st.markdown(
                 f'<div style="background:#e0e0e0;border-radius:4px;height:7px;margin:5px 0 8px;">'
                 f'<div style="background:{color};width:{score*10}%;height:7px;'
@@ -194,6 +234,7 @@ def render_card(s):
             )
             if reasons:
                 st.markdown("**Why it matches:** " + " · ".join(f"✓ {r}" for r in reasons[:4]))
+
             meta = " · ".join(filter(None, [
                 cats.get("degree_level","").title() if cats.get("degree_level") not in ("any","") else "",
                 cats.get("field","") if cats.get("field") != "general" else "",
@@ -203,12 +244,59 @@ def render_card(s):
             ]))
             if meta:
                 st.caption(meta)
+
         with right:
             st.metric("Award", s.get("amount", "Varies"))
             st.caption(f"📅 {s.get('deadline','Check website')}")
-            url = s.get("url", "")
-            if url and url != "#":
-                st.link_button("Apply →", url, use_container_width=True)
+
+        # ── Action row (full-width, below both columns) ───────────────────────
+        apply_btn = (
+            f'<a href="{su}" target="_blank" rel="noopener noreferrer" '
+            f'style="display:inline-flex;align-items:center;padding:6px 15px;'
+            f'background:#e53935;color:#fff;border-radius:5px;text-decoration:none;'
+            f'font-size:13px;font-weight:600;white-space:nowrap;">Apply →</a>'
+        ) if su else ""
+
+        copy_js = (
+            f"(function(b){{navigator.clipboard.writeText('{su}')"
+            f".then(function(){{b.textContent='✓ Copied';setTimeout(function()"
+            f"{{b.textContent='📋 Copy'}},2000)}})"
+            f".catch(function(){{b.textContent='📋 Copy'}})}})(this)"
+        )
+
+        source_note = ""
+        if src_url and src_url != url:
+            ss = _safe_url(src_url)
+            source_note = (
+                f'<a href="{ss}" target="_blank" rel="noopener noreferrer" '
+                f'style="font-size:11px;color:#bbb;text-decoration:none;" '
+                f'title="Original listing page">↩ listing</a>'
+            )
+
+        st.markdown(
+            f"""<div style="display:flex;align-items:center;gap:8px;
+                            margin-top:10px;padding-top:8px;
+                            border-top:1px solid #f0f0f0;flex-wrap:wrap;">
+              {apply_btn}
+              <a href="{su_g}" target="_blank" rel="noopener noreferrer"
+                 style="display:inline-flex;align-items:center;padding:6px 13px;
+                        background:#1a73e8;color:#fff;border-radius:5px;
+                        text-decoration:none;font-size:13px;font-weight:600;
+                        white-space:nowrap;">🔍 Search Google</a>
+              <a href="{su}" target="_blank" rel="noopener noreferrer"
+                 style="flex:1;min-width:120px;font-size:11px;color:#bbb;
+                        text-decoration:none;word-break:break-all;line-height:1.4;"
+                 title="{su}">{url_disp}</a>
+              {source_note}
+              <button onclick="{copy_js}"
+                      style="font-size:12px;padding:5px 11px;border:1px solid #ddd;
+                             border-radius:4px;background:#f5f5f5;cursor:pointer;
+                             color:#555;white-space:nowrap;flex-shrink:0;">
+                📋 Copy
+              </button>
+            </div>""",
+            unsafe_allow_html=True,
+        )
 
 
 # ── Load data (before sidebar so source list is available) ────────────────────
