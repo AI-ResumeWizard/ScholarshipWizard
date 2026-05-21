@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Scholarship Search — Powered by CareerOneStop</title>
+  <title>Scholarship Search — CareerOneStop, Grants.gov & More</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -314,6 +314,35 @@
     .footer p { font-size: 11px; color: var(--muted); line-height: 1.65; }
     .footer a { color: var(--blue); text-decoration: none; }
 
+    /* ── Source filter row ── */
+    .source-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+    .source-row .src-label { color: var(--muted); flex-shrink: 0; font-weight: 500; }
+    .source-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .source-check input { cursor: pointer; accent-color: var(--navy); }
+
+    /* ── Source badge on each card ── */
+    .badge-source {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 580px) {
       .header { padding: 16px 14px 12px; }
@@ -331,7 +360,7 @@
 <div class="header">
   <div class="header-inner">
     <h1>🎓 Scholarship Search</h1>
-    <p>Free · No login required · 9,500+ scholarships powered by CareerOneStop (U.S. Dept. of Labor)</p>
+    <p>Free · No login required · Powered by CareerOneStop, Grants.gov, Fastweb, Niche, GoingMerry &amp; more</p>
   </div>
 </div>
 
@@ -441,6 +470,18 @@
     </button>
   </div>
 
+  <!-- Source filter checkboxes (client-side refilter — no new API call) -->
+  <div class="source-row" id="source-row">
+    <span class="src-label">Sources:</span>
+    <label class="source-check"><input type="checkbox" id="src-all" checked onchange="onSourceAll()"> All</label>
+    <label class="source-check"><input type="checkbox" id="src-cos" checked onchange="onSourceCheck()"> CareerOneStop</label>
+    <label class="source-check"><input type="checkbox" id="src-gg" checked onchange="onSourceCheck()"> Grants.gov</label>
+    <label class="source-check"><input type="checkbox" id="src-fastweb" checked onchange="onSourceCheck()"> Fastweb</label>
+    <label class="source-check"><input type="checkbox" id="src-niche" checked onchange="onSourceCheck()"> Niche</label>
+    <label class="source-check"><input type="checkbox" id="src-gm" checked onchange="onSourceCheck()"> GoingMerry</label>
+    <label class="source-check"><input type="checkbox" id="src-sapi" checked onchange="onSourceCheck()"> ScholarshipAPI</label>
+  </div>
+
   <div id="filter-summary" class="filter-summary" aria-live="polite"></div>
   <div id="results-meta" class="results-meta" aria-live="polite"></div>
   <div id="results" role="list"></div>
@@ -452,10 +493,13 @@
          onerror="this.style.display='none'"><br>
     <p>
       Scholarship data provided by
-      <a href="https://www.careeronestop.org/" target="_blank" rel="noopener noreferrer">CareerOneStop</a>,
-      sponsored by the U.S. Department of Labor.<br>
-      This product was funded by a grant awarded by the U.S. Department of Labor's
-      Employment and Training Administration.
+      <a href="https://www.careeronestop.org/" target="_blank" rel="noopener noreferrer">CareerOneStop</a>
+      (sponsored by the U.S. Department of Labor),
+      <a href="https://www.grants.gov/" target="_blank" rel="noopener noreferrer">Grants.gov</a>,
+      <a href="https://www.fastweb.com/" target="_blank" rel="noopener noreferrer">Fastweb</a>,
+      <a href="https://www.niche.com/" target="_blank" rel="noopener noreferrer">Niche</a>, and
+      <a href="https://www.goingmerry.com/" target="_blank" rel="noopener noreferrer">GoingMerry</a>.<br>
+      CareerOneStop is funded by a grant awarded by the U.S. Department of Labor's Employment and Training Administration.
     </p>
   </div>
 
@@ -474,6 +518,60 @@ const PAGE_SIZE = 20;
 let allResults  = [];
 let filtered    = [];
 let currentPage = 1;
+
+// ── Source badge colors ───────────────────────────────────────────────────────
+const SOURCE_COLORS = {
+  'CareerOneStop':        { bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
+  'Grants.gov (Federal)': { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
+  'Fastweb':              { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
+  'Niche':                { bg: '#fce4ec', color: '#880e4f', border: '#f48fb1' },
+  'GoingMerry':           { bg: '#f3e5f5', color: '#6a1b9a', border: '#ce93d8' },
+  'ScholarshipAPI':       { bg: '#e0f2f1', color: '#00695c', border: '#80cbc4' },
+};
+
+// Map checkbox IDs → Source field values returned by the API
+const SOURCE_ID_MAP = {
+  'src-cos':     'CareerOneStop',
+  'src-gg':      'Grants.gov (Federal)',
+  'src-fastweb': 'Fastweb',
+  'src-niche':   'Niche',
+  'src-gm':      'GoingMerry',
+  'src-sapi':    'ScholarshipAPI',
+};
+
+function getActiveSources() {
+  if (document.getElementById('src-all').checked) return null; // null = show all
+  const active = [];
+  for (const [id, src] of Object.entries(SOURCE_ID_MAP)) {
+    if (document.getElementById(id).checked) active.push(src);
+  }
+  return active.length ? active : null;
+}
+
+function onSourceAll() {
+  const checked = document.getElementById('src-all').checked;
+  Object.keys(SOURCE_ID_MAP).forEach(id => {
+    document.getElementById(id).checked = checked;
+  });
+  refilter();
+}
+
+function onSourceCheck() {
+  const allChecked = Object.keys(SOURCE_ID_MAP).every(id => document.getElementById(id).checked);
+  document.getElementById('src-all').checked = allChecked;
+  refilter();
+}
+
+// Re-apply client-side filters (source checkboxes, field, background, amount)
+// without hitting the API again.
+function refilter() {
+  if (!allResults.length) return; // no data yet — wait for doSearch()
+  const f = getFilters();
+  filtered = applyClientFilters(allResults, f);
+  currentPage = 1;
+  updateFilterSummary(f, filtered.length);
+  renderVisible();
+}
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -595,6 +693,12 @@ const BG_KEYWORDS = {
 function applyClientFilters(results, f) {
   let res = [...results];
 
+  // Source filter (checkbox-driven, no API call needed)
+  const activeSources = getActiveSources();
+  if (activeSources) {
+    res = res.filter(s => activeSources.includes(s.Source || 'CareerOneStop'));
+  }
+
   // Field: only apply client-side when keyword is also set (avoids over-filtering
   // results that already came back from an API field-keyword search)
   if (f.field && f.keyword && FIELD_KEYWORDS[f.field]) {
@@ -666,6 +770,9 @@ function updateFilterSummary(f, count) {
   if (f.bgVal)    parts.push(BG_LABELS[f.bgVal]        || f.bgVal);
   if (f.sortVal)  parts.push(SORT_LABELS[f.sortVal]    || '');
 
+  const activeSources = getActiveSources();
+  if (activeSources) parts.push('From: ' + activeSources.join(', '));
+
   const el = document.getElementById('filter-summary');
   if (!parts.length) { el.innerHTML = ''; return; }
 
@@ -683,6 +790,9 @@ function renderCard(s) {
   const url      = esc(pick(s, 'URL','url','ScholarshipURL','Link'));
   const desc     = esc(pick(s, 'Description','description','ScholarshipDescription'));
   const level    = esc(pick(s, 'TrainingProgramLengthName','trainingProgramLengthName'));
+  const src      = pick(s, 'Source','source') || 'CareerOneStop';
+  const srcStyle = SOURCE_COLORS[src] || { bg: '#f5f5f5', color: '#555', border: '#ddd' };
+  const srcBadge = `<span class="badge-source" style="background:${srcStyle.bg};color:${srcStyle.color};border:1px solid ${srcStyle.border};">${esc(src)}</span>`;
 
   const amtNum = extractAmount(amtRaw);
   const amtBadge = amtNum > 0
@@ -706,7 +816,10 @@ function renderCard(s) {
   <div class="card" role="listitem">
     <div class="card-top">
       <div class="card-title">${title}</div>
-      ${amtBadge}
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        ${srcBadge}
+        ${amtBadge}
+      </div>
     </div>
     <div class="card-meta">
       ${provider ? `<span>🏛️ ${provider}</span>` : ''}
@@ -836,7 +949,8 @@ async function doSearch() {
   }
 
   allResults = data.Scholarships || data.scholarships || data.ScholarshipList || [];
-  console.log('[widget] Scholarships received:', allResults.length);
+  console.log('[widget] Scholarships received:', allResults.length,
+              '| breakdown:', data.SourceBreakdown || 'n/a');
 
   filtered    = applyClientFilters(allResults, f);
   currentPage = 1;
@@ -851,6 +965,10 @@ function clearFilters() {
   ['sel-degree','sel-field','sel-state','sel-amount',
    'sel-award-type','sel-background','sel-sort'].forEach(id => {
     document.getElementById(id).value = '';
+  });
+  document.getElementById('src-all').checked = true;
+  Object.keys(SOURCE_ID_MAP).forEach(id => {
+    document.getElementById(id).checked = true;
   });
   doSearch();
 }
