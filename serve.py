@@ -86,88 +86,113 @@ def widget():
     return send_file("widget.html")
 
 
-# ── /api/health  →  quick credential + connectivity check ─────────────────────
+# CareerOneStop documented query params — anything outside this list can cause 404s
+_COS_SUPPORTED_PARAMS = frozenset({
+    "keyword", "limit", "startRecord",
+    "trainingProgramLength", "sortColumns", "sortOrder",
+})
+
+
+def _build_cos_url(user_id: str, params: dict) -> str:
+    """
+    Construct the CareerOneStop URL explicitly.
+    Only forward params the API actually supports; extras cause 404.
+    """
+    cos_params = {k: v for k, v in params.items() if k in _COS_SUPPORTED_PARAMS}
+    # keyword is required — fall back to 'scholarship' if somehow absent
+    cos_params.setdefault("keyword", "scholarship")
+    cos_params.setdefault("limit",   "50")
+    return f"https://api.careeronestop.org/v1/scholarship/{user_id}?{urlencode(cos_params)}"
+
+
+# ── /api/health  →  credential check + live API ping ─────────────────────────
 @app.route("/api/health")
 def api_health():
-    user_id = os.environ.get("CAREERONESTOP_USER_ID", "")
-    token   = os.environ.get("CAREERONESTOP_TOKEN", "")
-    result  = {
-        "CAREERONESTOP_USER_ID_set": bool(user_id),
-        "CAREERONESTOP_USER_ID_value": user_id or "(not set)",
-        "CAREERONESTOP_TOKEN_set": bool(token),
-        "CAREERONESTOP_TOKEN_preview": (token[:8] + "…") if token else "(not set)",
+    # Strip whitespace — Render env-var copy-paste often adds trailing spaces
+    user_id = (os.environ.get("CAREERONESTOP_USER_ID") or "").strip()
+    token   = (os.environ.get("CAREERONESTOP_TOKEN")   or "").strip()
+
+    result = {
+        "CAREERONESTOP_USER_ID_set":     bool(user_id),
+        "CAREERONESTOP_USER_ID_value":   user_id or "(not set)",
+        "CAREERONESTOP_TOKEN_set":       bool(token),
+        "CAREERONESTOP_TOKEN_preview":   (token[:8] + "…") if token else "(not set)",
     }
-    # Quick live ping to the API with a tiny request
+
     if user_id and token:
+        # Test the exact URL format with keyword=nursing as specified
+        test_url = f"https://api.careeronestop.org/v1/scholarship/{user_id}?keyword=nursing&limit=10"
+        result["api_test_url"] = test_url
+        print(f"[health] Pinging: {test_url}")
         try:
             ping = _req.get(
-                f"https://api.careeronestop.org/v1/scholarship/{user_id}",
+                test_url,
                 headers={"Authorization": f"Bearer {token}"},
-                params={"keyword": "scholarship", "limit": "1"},
                 timeout=10,
             )
             result["api_ping_status"] = ping.status_code
             result["api_ping_ok"]     = ping.status_code == 200
             if ping.status_code != 200:
-                result["api_ping_body"] = ping.text[:400]
+                result["api_ping_body"] = ping.text[:500]
+            else:
+                # Show how many results came back as a sanity check
+                try:
+                    data = ping.json()
+                    count = len(data.get("Scholarships") or data.get("scholarships") or [])
+                    result["api_ping_scholarship_count"] = count
+                except Exception:
+                    pass
         except Exception as exc:
             result["api_ping_error"] = str(exc)
+
     return jsonify(result)
 
 
 # ── /api/scholarships  →  CareerOneStop proxy ─────────────────────────────────
 @app.route("/api/scholarships")
 def cos_proxy():
-    user_id = os.environ.get("CAREERONESTOP_USER_ID")
-    token   = os.environ.get("CAREERONESTOP_TOKEN")
+    # Strip whitespace — trailing spaces in Render env vars are a common cause of 404
+    user_id = (os.environ.get("CAREERONESTOP_USER_ID") or "").strip()
+    token   = (os.environ.get("CAREERONESTOP_TOKEN")   or "").strip()
 
-    print(f"[API] /api/scholarships called — user_id={'set' if user_id else 'MISSING'}, "
+    print(f"[API] /api/scholarships — user_id={'set' if user_id else 'MISSING'}, "
           f"token={'set' if token else 'MISSING'}")
 
     if not user_id or not token:
-        msg = ("CareerOneStop credentials not configured on server. "
-               "Set CAREERONESTOP_USER_ID and CAREERONESTOP_TOKEN env vars.")
+        msg = ("CareerOneStop credentials not configured. "
+               "Set CAREERONESTOP_USER_ID and CAREERONESTOP_TOKEN in Render env vars.")
         print(f"[API] ERROR: {msg}")
         return jsonify({"error": msg}), 503
 
-    # Forward all query params from the browser completely unchanged — no overrides
-    params = dict(request.args)
-    target_url = f"https://api.careeronestop.org/v1/scholarship/{user_id}"
-    full_url   = f"{target_url}?{urlencode(params)}"
-    print(f"[API] Incoming params: {params}")
-    print(f"[API] Calling CareerOneStop: {full_url}")
+    incoming = dict(request.args)
+    print(f"[API] Incoming params from browser: {incoming}")
+
+    # Build the URL explicitly with only documented CareerOneStop params.
+    # Forwarding unknown params (awardAmountMin, typeOfAward, etc.) causes 404.
+    full_url = _build_cos_url(user_id, incoming)
+    print(f"[API] Calling: {full_url}")
 
     try:
         resp = _req.get(
-            target_url,
+            full_url,
             headers={"Authorization": f"Bearer {token}"},
-            params=params,
             timeout=25,
         )
-        print(f"[API] CareerOneStop response: HTTP {resp.status_code} "
-              f"({len(resp.content)} bytes)")
+        print(f"[API] Response: HTTP {resp.status_code} ({len(resp.content)} bytes)")
         if resp.status_code != 200:
             print(f"[API] Error body: {resp.text[:500]}")
-            # Pass the real error body back to the browser so it's visible
-            return Response(
-                resp.content,
-                status=resp.status_code,
-                headers={
-                    "Content-Type":                "application/json",
-                    "Access-Control-Allow-Origin": "*",
-                },
-            )
+
         return Response(
             resp.content,
-            status=200,
+            status=resp.status_code,
             headers={
                 "Content-Type":                resp.headers.get("Content-Type", "application/json"),
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control":               "public, max-age=120",
+                "Cache-Control":               "public, max-age=120" if resp.status_code == 200 else "no-cache",
             },
         )
     except _req.Timeout:
-        print("[API] ERROR: CareerOneStop timed out after 25 s")
+        print("[API] ERROR: timed out after 25 s")
         return jsonify({"error": "CareerOneStop API timed out (25 s)"}), 504
     except Exception as exc:
         print(f"[API] ERROR: {exc}")
