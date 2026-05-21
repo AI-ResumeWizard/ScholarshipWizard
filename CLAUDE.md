@@ -25,9 +25,22 @@ emails an HTML digest every Monday morning via Gmail SMTP.
   - `seen_scholarships.json` — dedup cache (auto-generated, do not delete)
 
 ## Environment Variables (set in Render dashboard, never hardcode)
+
+### Email (required)
 - `EMAIL_FROM` — sender Gmail address
 - `EMAIL_PASSWORD` — Gmail App Password (16 chars)
 - `EMAIL_TO` — recipient email address
+
+### CareerOneStop API (optional — free, US Dept of Labor)
+- `CAREERONESTOP_API_KEY` — API key from registration
+- `CAREERONESTOP_USER_ID` — user ID assigned at registration
+- Register: https://www.careeronestop.org/Developers/WebAPI/registration.aspx
+- If either var is missing the integration is silently skipped
+
+### ScholarshipAPI.com (optional — free tier)
+- `SCHOLARSHIPAPI_KEY` — API key from registration
+- Register: https://scholarshipapi.com/
+- If var is missing the integration is silently skipped
 
 ## How to Make Changes
 1. Edit the relevant file(s)

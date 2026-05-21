@@ -550,6 +550,184 @@ def scrape_source(source):
         return []
 
 
+# ── API Integrations ──────────────────────────────────────────────────────────
+# Keywords sent to each API (multiple calls, results are deduped)
+_COS_KEYWORDS  = [
+    "artificial intelligence", "machine learning",
+    "technology strategy", "data science", "STEM graduate",
+]
+_SAPI_KEYWORDS = [
+    "artificial intelligence", "machine learning",
+    "technology strategy", "data science", "graduate AI",
+]
+
+
+def fetch_careeronestop(api_key, user_id):
+    """
+    CareerOneStop Scholarship Search (US Dept of Labor — free API).
+    Register: https://www.careeronestop.org/Developers/WebAPI/registration.aspx
+    Env vars : CAREERONESTOP_API_KEY, CAREERONESTOP_USER_ID
+    """
+    if not api_key or not user_id:
+        print("  [skip] CareerOneStop: CAREERONESTOP_API_KEY / CAREERONESTOP_USER_ID not set")
+        return []
+
+    results = []
+    seen_in_api: set = set()
+
+    for keyword in _COS_KEYWORDS:
+        try:
+            resp = requests.get(
+                f"https://api.careeronestop.org/v1/scholarship/{user_id}",
+                headers={"Authorization": f"socscode {api_key}"},
+                params={
+                    "keyword": keyword,
+                    "trainingProgramLength": 4,
+                    "sortColumns": "deadline",
+                    "sortOrder": 0,
+                    "limit": 100,
+                },
+                timeout=20,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.HTTPError as e:
+            print(f"    [warn] CareerOneStop '{keyword}': HTTP {e.response.status_code} — {e.response.text[:120]}")
+            time.sleep(1)
+            continue
+        except Exception as e:
+            print(f"    [warn] CareerOneStop '{keyword}': {e}")
+            time.sleep(1)
+            continue
+
+        items = data.get("Scholarships") or data.get("scholarships") or []
+        added = 0
+        for item in items:
+            title = (
+                item.get("ScholarshipName") or item.get("scholarshipName")
+                or item.get("Name") or ""
+            ).strip()
+            if not title:
+                continue
+            key = uid(title)
+            if key in seen_in_api:
+                continue
+            seen_in_api.add(key)
+
+            provider = (item.get("Provider") or item.get("provider")
+                        or item.get("Organization") or "CareerOneStop")
+            amount   = (item.get("Amount") or item.get("amount")
+                        or item.get("AwardAmount") or "See listing")
+            deadline = (item.get("DeadlineDate") or item.get("deadlineDate")
+                        or item.get("Deadline") or "Check website")
+            url      = (item.get("URL") or item.get("url")
+                        or item.get("ScholarshipURL") or item.get("Link") or "")
+            desc     = (item.get("Description") or item.get("description")
+                        or item.get("ScholarshipDescription") or "")
+
+            results.append({
+                "title":      title[:120],
+                "provider":   str(provider),
+                "amount":     str(amount)[:80],
+                "deadline":   str(deadline)[:80],
+                "url":        str(url),
+                "source_url": f"https://api.careeronestop.org/v1/scholarship/{user_id}",
+                "raw_text":   f"{title} {provider} {desc}"[:500],
+                "source":     "CareerOneStop",
+            })
+            added += 1
+
+        print(f"    CareerOneStop '{keyword}': {len(items)} returned, {added} new")
+        time.sleep(1)
+
+    return results
+
+
+def fetch_scholarshipapi(api_key):
+    """
+    ScholarshipAPI.com (free tier).
+    Register: https://scholarshipapi.com/
+    Env var  : SCHOLARSHIPAPI_KEY
+    """
+    if not api_key:
+        print("  [skip] ScholarshipAPI.com: SCHOLARSHIPAPI_KEY not set")
+        return []
+
+    results = []
+    seen_in_api: set = set()
+
+    for keyword in _SAPI_KEYWORDS:
+        try:
+            resp = requests.get(
+                "https://scholarshipapi.com/api/v1/scholarships",
+                headers={
+                    "X-Api-Key":     api_key,
+                    "Authorization": f"Bearer {api_key}",
+                },
+                params={
+                    "search": keyword,
+                    "level":  "masters",
+                    "limit":  50,
+                },
+                timeout=20,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.HTTPError as e:
+            print(f"    [warn] ScholarshipAPI.com '{keyword}': HTTP {e.response.status_code} — {e.response.text[:120]}")
+            time.sleep(1)
+            continue
+        except Exception as e:
+            print(f"    [warn] ScholarshipAPI.com '{keyword}': {e}")
+            time.sleep(1)
+            continue
+
+        items = (
+            data.get("scholarships") or data.get("data")
+            or data.get("results") or (data if isinstance(data, list) else [])
+        )
+        added = 0
+        for item in items:
+            title = (
+                item.get("name") or item.get("scholarship_name")
+                or item.get("title") or ""
+            ).strip()
+            if not title:
+                continue
+            key = uid(title)
+            if key in seen_in_api:
+                continue
+            seen_in_api.add(key)
+
+            provider = (item.get("sponsor_name") or item.get("organization")
+                        or item.get("provider") or "Unknown")
+            amount   = (item.get("award_amount") or item.get("amount")
+                        or item.get("value") or "See listing")
+            deadline = (item.get("deadline") or item.get("deadline_date")
+                        or item.get("due_date") or "Check website")
+            url      = (item.get("link") or item.get("url")
+                        or item.get("website") or item.get("apply_url") or "")
+            desc     = (item.get("description") or item.get("details")
+                        or item.get("requirements") or "")
+
+            results.append({
+                "title":      title[:120],
+                "provider":   str(provider),
+                "amount":     str(amount)[:80],
+                "deadline":   str(deadline)[:80],
+                "url":        str(url),
+                "source_url": "https://scholarshipapi.com/api/v1/scholarships",
+                "raw_text":   f"{title} {provider} {desc}"[:500],
+                "source":     "ScholarshipAPI.com",
+            })
+            added += 1
+
+        print(f"    ScholarshipAPI.com '{keyword}': {len(items)} returned, {added} new")
+        time.sleep(1)
+
+    return results
+
+
 # ── Phase 2: Categorization ───────────────────────────────────────────────────
 def categorize(s):
     text = (
@@ -875,7 +1053,19 @@ def main(scrape_only=False):
         print(f"  Scraping: {source['name']}...")
         raw.extend(scrape_source(source))
         time.sleep(2)
-    print(f"\nPhase 1: {len(raw)} total items scraped")
+    print(f"\nPhase 1: {len(raw)} items from scrapers")
+
+    # Phase 1b: optional API integrations
+    print("Phase 1b: API integrations...")
+    _before = len(raw)
+    raw.extend(fetch_careeronestop(
+        os.environ.get("CAREERONESTOP_API_KEY"),
+        os.environ.get("CAREERONESTOP_USER_ID"),
+    ))
+    raw.extend(fetch_scholarshipapi(
+        os.environ.get("SCHOLARSHIPAPI_KEY"),
+    ))
+    print(f"API integrations added {len(raw) - _before} items — total: {len(raw)}")
 
     # Dedup scraped against seen and within this run
     seen_this_run: set = set()
