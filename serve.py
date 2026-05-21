@@ -15,10 +15,11 @@ import os
 import subprocess
 import threading
 import time
+from urllib.parse import urlencode
 
 import requests as _req
 import websocket as _ws
-from flask import Flask, Response, redirect, request, send_file, stream_with_context
+from flask import Flask, Response, jsonify, redirect, request, send_file, stream_with_context
 from flask_sock import Sock
 
 # ── Start Streamlit on an internal port ───────────────────────────────────────
@@ -85,42 +86,92 @@ def widget():
     return send_file("widget.html")
 
 
+# ── /api/health  →  quick credential + connectivity check ─────────────────────
+@app.route("/api/health")
+def api_health():
+    user_id = os.environ.get("CAREERONESTOP_USER_ID", "")
+    token   = os.environ.get("CAREERONESTOP_TOKEN", "")
+    result  = {
+        "CAREERONESTOP_USER_ID_set": bool(user_id),
+        "CAREERONESTOP_USER_ID_value": user_id or "(not set)",
+        "CAREERONESTOP_TOKEN_set": bool(token),
+        "CAREERONESTOP_TOKEN_preview": (token[:8] + "…") if token else "(not set)",
+    }
+    # Quick live ping to the API with a tiny request
+    if user_id and token:
+        try:
+            ping = _req.get(
+                f"https://api.careeronestop.org/v1/scholarship/{user_id}",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"keyword": "scholarship", "limit": "1"},
+                timeout=10,
+            )
+            result["api_ping_status"] = ping.status_code
+            result["api_ping_ok"]     = ping.status_code == 200
+            if ping.status_code != 200:
+                result["api_ping_body"] = ping.text[:400]
+        except Exception as exc:
+            result["api_ping_error"] = str(exc)
+    return jsonify(result)
+
+
 # ── /api/scholarships  →  CareerOneStop proxy ─────────────────────────────────
 @app.route("/api/scholarships")
 def cos_proxy():
     user_id = os.environ.get("CAREERONESTOP_USER_ID")
     token   = os.environ.get("CAREERONESTOP_TOKEN")
 
+    print(f"[API] /api/scholarships called — user_id={'set' if user_id else 'MISSING'}, "
+          f"token={'set' if token else 'MISSING'}")
+
     if not user_id or not token:
-        return (
-            {"error": "CareerOneStop credentials not configured on server. "
-                      "Set CAREERONESTOP_USER_ID and CAREERONESTOP_TOKEN env vars."},
-            503,
-        )
+        msg = ("CareerOneStop credentials not configured on server. "
+               "Set CAREERONESTOP_USER_ID and CAREERONESTOP_TOKEN env vars.")
+        print(f"[API] ERROR: {msg}")
+        return jsonify({"error": msg}), 503
 
     # Forward all query params from the browser completely unchanged — no overrides
     params = dict(request.args)
+    target_url = f"https://api.careeronestop.org/v1/scholarship/{user_id}"
+    full_url   = f"{target_url}?{urlencode(params)}"
+    print(f"[API] Incoming params: {params}")
+    print(f"[API] Calling CareerOneStop: {full_url}")
 
     try:
         resp = _req.get(
-            f"https://api.careeronestop.org/v1/scholarship/{user_id}",
+            target_url,
             headers={"Authorization": f"Bearer {token}"},
             params=params,
             timeout=25,
         )
+        print(f"[API] CareerOneStop response: HTTP {resp.status_code} "
+              f"({len(resp.content)} bytes)")
+        if resp.status_code != 200:
+            print(f"[API] Error body: {resp.text[:500]}")
+            # Pass the real error body back to the browser so it's visible
+            return Response(
+                resp.content,
+                status=resp.status_code,
+                headers={
+                    "Content-Type":                "application/json",
+                    "Access-Control-Allow-Origin": "*",
+                },
+            )
         return Response(
             resp.content,
-            status=resp.status_code,
+            status=200,
             headers={
-                "Content-Type":                 resp.headers.get("Content-Type", "application/json"),
-                "Access-Control-Allow-Origin":  "*",
-                "Cache-Control":                "public, max-age=300",
+                "Content-Type":                resp.headers.get("Content-Type", "application/json"),
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control":               "public, max-age=120",
             },
         )
     except _req.Timeout:
-        return {"error": "CareerOneStop API timed out (25 s)"}, 504
+        print("[API] ERROR: CareerOneStop timed out after 25 s")
+        return jsonify({"error": "CareerOneStop API timed out (25 s)"}), 504
     except Exception as exc:
-        return {"error": str(exc)}, 502
+        print(f"[API] ERROR: {exc}")
+        return jsonify({"error": str(exc)}), 502
 
 
 # ── /dashboard*  →  HTTP reverse proxy to Streamlit ──────────────────────────

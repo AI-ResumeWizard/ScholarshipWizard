@@ -540,8 +540,11 @@ const SORT_MAP = {
 function buildApiParams(f) {
   const p = new URLSearchParams();
 
-  // keyword: user text → field primary keyword → generic fallback
-  const kw = f.keyword || (f.field ? FIELD_PRIMARY[f.field] : '') || 'scholarship';
+  // keyword: user text takes priority; if blank but a field is chosen, use that field's
+  // primary search term; if still blank, use 'scholarship' as the broadest possible search.
+  const kw = f.keyword
+    || (f.field ? FIELD_PRIMARY[f.field] : '')
+    || 'scholarship';
   p.set('keyword', kw);
   p.set('limit', '50');
 
@@ -765,47 +768,81 @@ function renderVisible() {
 
 // ── Main search — fresh API call on every invocation ─────────────────────────
 async function doSearch() {
-  const f      = getFilters();
-  const params = buildApiParams(f);
-  const box    = document.getElementById('results');
-  const meta   = document.getElementById('results-meta');
-  const sumEl  = document.getElementById('filter-summary');
+  const f        = getFilters();
+  const params   = buildApiParams(f);
+  const fullUrl  = `${API_URL}?${params}`;
+  const box      = document.getElementById('results');
+  const meta     = document.getElementById('results-meta');
+  const sumEl    = document.getElementById('filter-summary');
+
+  // Debug: log the exact URL being called so it's visible in browser DevTools
+  console.log('[widget] Fetching:', fullUrl);
 
   box.innerHTML  = '<div class="loading"><div class="spinner"></div><p>Searching scholarships…</p></div>';
   meta.innerHTML = '';
   sumEl.innerHTML = '';
   document.getElementById('pagination').innerHTML = '';
 
+  let resp;
   try {
-    const resp = await fetch(`${API_URL}?${params}`);
-    if (!resp.ok) {
-      let detail = '';
-      try { const j = await resp.json(); detail = j.error || ''; } catch { /* ignore */ }
-      throw new Error(`Server returned ${resp.status}${detail ? ': ' + detail : ''}`);
-    }
-    const data = await resp.json();
-    allResults = data.Scholarships || data.scholarships || data.ScholarshipList || [];
-
-    // Apply client-side filters (field, background, amount belt-and-suspenders)
-    filtered    = applyClientFilters(allResults, f);
-    currentPage = 1;
-
-    updateFilterSummary(f, filtered.length);
-    renderVisible();
-
-  } catch (err) {
-    const isNetwork = err.message.toLowerCase().includes('failed to fetch') ||
-                      err.message.toLowerCase().includes('networkerror');
+    resp = await fetch(fullUrl);
+  } catch (networkErr) {
+    console.error('[widget] Network error:', networkErr);
     box.innerHTML = `
       <div class="error-box">
-        <strong>Could not load scholarships</strong><br><br>
-        ${isNetwork
-          ? `<b>Network error</b> — could not reach the scholarship API server.<br>
-             Make sure <code>serve.py</code> is running and <code>API_URL</code>
-             points to your server. Current: <code>${esc(API_URL)}</code>`
-          : `Error: ${esc(err.message)}`}
+        <strong>Network error — could not reach the server</strong><br><br>
+        The fetch to <code>${esc(fullUrl)}</code> failed before getting a response.<br>
+        This usually means the server is unreachable or the URL is wrong.<br><br>
+        ${esc(networkErr.message)}
       </div>`;
+    return;
   }
+
+  // Capture the raw body text regardless of status so we can show it
+  const rawText = await resp.text();
+  console.log('[widget] Response status:', resp.status);
+  if (!resp.ok) console.warn('[widget] Error body:', rawText.slice(0, 500));
+
+  if (!resp.ok) {
+    let detail = rawText;
+    try {
+      const j = JSON.parse(rawText);
+      detail = j.error || j.message || JSON.stringify(j, null, 2);
+    } catch { /* rawText is not JSON — show as-is */ }
+    box.innerHTML = `
+      <div class="error-box">
+        <strong>API error — HTTP ${resp.status}</strong><br><br>
+        <b>Request URL:</b> <code>${esc(fullUrl)}</code><br><br>
+        <b>Server response:</b><br>
+        <pre style="background:#fee2e2;padding:10px;border-radius:4px;font-size:12px;
+                    white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;">${esc(detail)}</pre>
+        <br>Check the server logs (Render → Logs) and
+        <a href="/api/health" target="_blank">visit /api/health</a> to verify credentials.
+      </div>`;
+    return;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(rawText);
+  } catch (parseErr) {
+    console.error('[widget] JSON parse error:', parseErr, rawText.slice(0, 200));
+    box.innerHTML = `
+      <div class="error-box">
+        <strong>Unexpected response — could not parse JSON</strong><br><br>
+        <pre style="font-size:12px;white-space:pre-wrap;">${esc(rawText.slice(0, 300))}</pre>
+      </div>`;
+    return;
+  }
+
+  allResults = data.Scholarships || data.scholarships || data.ScholarshipList || [];
+  console.log('[widget] Scholarships received:', allResults.length);
+
+  filtered    = applyClientFilters(allResults, f);
+  currentPage = 1;
+
+  updateFilterSummary(f, filtered.length);
+  renderVisible();
 }
 
 // ── Clear all filters and run a fresh blank search ────────────────────────────
@@ -823,8 +860,18 @@ document.getElementById('keyword').addEventListener('keydown', e => {
   if (e.key === 'Enter') doSearch();
 });
 
-// Initial load
-doSearch();
+// Initial load — show a prompt rather than auto-searching with a hidden keyword
+(function initialState() {
+  const box = document.getElementById('results');
+  box.innerHTML = `
+    <div class="empty" style="padding:48px 0;">
+      <div style="font-size:32px;margin-bottom:12px;">🎓</div>
+      <strong style="font-size:16px;color:#374151;">Search for scholarships above</strong><br>
+      <span style="font-size:13px;color:#9ca3af;margin-top:6px;display:block;">
+        Type a keyword or choose a filter to get started.
+      </span>
+    </div>`;
+})();
 </script>
 
 </body>
