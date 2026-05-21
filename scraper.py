@@ -341,6 +341,47 @@ def dollar_in(text):
     return m.group(0) if m else None
 
 
+def parse_amount_numeric(s):
+    """Return the largest dollar value found in an amount string, or 0."""
+    nums = re.findall(r'[\d,]+', s)
+    vals = []
+    for n in nums:
+        try:
+            v = int(n.replace(',', ''))
+            if v >= 500:
+                vals.append(v)
+        except ValueError:
+            pass
+    return max(vals) if vals else 0
+
+
+def parse_deadline_date(s):
+    """Return ISO date string for the next occurrence of a named deadline, or None."""
+    MONTHS = {
+        "january": 1, "february": 2, "march": 3, "april": 4,
+        "may": 5, "june": 6, "july": 7, "august": 8,
+        "september": 9, "october": 10, "november": 11, "december": 12,
+    }
+    m = re.search(
+        r'(january|february|march|april|may|june|july|august|'
+        r'september|october|november|december)\s+(\d{1,2})',
+        s.lower()
+    )
+    if not m:
+        return None
+    try:
+        from datetime import date as _date
+        today = _date.today()
+        month_num = MONTHS[m.group(1)]
+        day = int(m.group(2))
+        dl = _date(today.year, month_num, day)
+        if dl < today:
+            dl = _date(today.year + 1, month_num, day)
+        return dl.isoformat()
+    except ValueError:
+        return None
+
+
 def date_in(text):
     m = re.search(
         r'(?:January|February|March|April|May|June|July|August|'
@@ -813,6 +854,14 @@ def main():
             c["raw_text"] = " ".join(c.get("score_reasons", [])) + " " + c.get("why", "")
         c["cats"] = categorize(c)
 
+    # Enrich with numeric fields used by the dashboard
+    for item in new_scraped:
+        item["amount_numeric"] = parse_amount_numeric(item.get("amount", ""))
+        item["deadline_parsed"] = parse_deadline_date(item.get("deadline", ""))
+    for c in CURATED:
+        c["amount_numeric"] = parse_amount_numeric(c.get("amount", ""))
+        c["deadline_parsed"] = parse_deadline_date(c.get("deadline", ""))
+
     save_seen(seen)
 
     # Combine, sort by score descending
@@ -824,6 +873,16 @@ def main():
     low = [s for s in combined if s.get("score", 0) < 5]
 
     print(f"\nScoring complete — HIGH: {len(high)}, MEDIUM: {len(medium)}, LOW: {len(low)}")
+
+    # Write dashboard data file (before email in case email fails)
+    dashboard_data = {
+        "scraped_at": datetime.now().isoformat(),
+        "total_scraped": len(raw),
+        "scholarships": combined,
+    }
+    with open("scholarships.json", "w") as f:
+        json.dump(dashboard_data, f, indent=2, default=str)
+    print("scholarships.json written.")
 
     html = build_email(high, medium, low)
     send_email(html, len(high))

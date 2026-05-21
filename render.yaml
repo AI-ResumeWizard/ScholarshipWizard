@@ -12,3 +12,20 @@ services:
         sync: false          # Gmail App Password — NOT your real password
       - key: EMAIL_TO
         sync: false          # Where to send the digest
+
+  - type: web
+    name: scholarship-dashboard
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0
+    envVars:
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: EMAIL_TO
+        sync: false
+    # NOTE: To share scholarships.json between this web service and the cron job,
+    # add a Render Disk (Storage tab in the dashboard) mounted at /opt/render/project/src
+    # on both services. Without a shared disk the dashboard will only see data
+    # written by the "Run Scrape Now" button (same process) or a local file.
