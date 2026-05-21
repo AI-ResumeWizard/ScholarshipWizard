@@ -73,6 +73,7 @@ PRESET_DEFS = {
 
 
 # ── Data / parsing helpers ────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
 def load_data():
     if not os.path.exists(SCHOLARSHIPS_FILE):
         return None
@@ -421,7 +422,7 @@ with st.sidebar:
 
     st.divider()
     run_clicked = st.button("🔄 Run Scrape Now", type="primary", use_container_width=True)
-    st.caption("Requires EMAIL env vars. Also sends the weekly digest email.")
+    st.caption("Scrapes all sources and updates the dashboard. No email is sent.")
 
 
 # ── Handle scrape run ─────────────────────────────────────────────────────────
@@ -429,17 +430,26 @@ if run_clicked:
     with st.spinner("Scraping scholarships… ~2 minutes."):
         try:
             result = subprocess.run(
-                [sys.executable, "scraper.py"],
+                [sys.executable, "scraper.py", "--scrape-only"],
                 capture_output=True, text=True, timeout=360,
             )
         except subprocess.TimeoutExpired:
             st.error("Scrape timed out after 6 minutes.")
             st.stop()
+
     if result.returncode == 0:
-        st.success("Scrape complete — data refreshed.")
+        # Parse total found from scraper output
+        m = re.search(
+            r"Scoring complete.*?HIGH:\s*(\d+).*?MEDIUM:\s*(\d+).*?LOW:\s*(\d+)",
+            result.stdout,
+        )
+        total = sum(int(m.group(i)) for i in (1, 2, 3)) if m else None
+        msg = f"✅ Found {total} scholarships! Refreshing…" if total else "✅ Scrape complete — refreshing…"
+        st.success(msg)
+        load_data.clear()   # bust the 5-minute cache so new data loads immediately
         st.rerun()
     else:
-        st.error("Scrape failed. Check EMAIL env vars are set.")
+        st.error("Scrape failed.")
         with st.expander("Error details"):
             st.code(result.stderr[-2000:] or result.stdout[-2000:])
 

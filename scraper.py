@@ -865,7 +865,7 @@ def send_email(html_body, high_count):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def main():
+def main(scrape_only=False):
     print(f"Scholarship scraper — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     seen = load_seen()
 
@@ -930,10 +930,20 @@ def main():
         json.dump(dashboard_data, f, indent=2, default=str)
     print("scholarships.json written.")
 
+    if scrape_only:
+        print("scrape_only=True — skipping email send.")
+        print("Done.")
+        return
+
     html = build_email(high, medium, low)
     send_email(html, len(high))
     print("Done.")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scrape-only", action="store_true",
+                        help="Save scholarships.json but skip sending the email")
+    args = parser.parse_args()
+    main(scrape_only=args.scrape_only)
