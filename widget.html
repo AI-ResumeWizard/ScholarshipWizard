@@ -300,9 +300,10 @@
 
 <div class="wrap">
 
+  <!-- Row 1: Search + basic filters -->
   <div class="search-row">
-    <input type="text" id="keyword" value="artificial intelligence"
-           placeholder="e.g. nursing, education, AI, technology…"
+    <input type="text" id="keyword"
+           placeholder="e.g. nursing, STEM, technology, education…"
            aria-label="Search scholarships">
     <button class="btn-search" onclick="doSearch()">Search</button>
   </div>
@@ -313,10 +314,31 @@
       <option value="1">Certificate / &lt;1 year</option>
       <option value="2">Associate's</option>
       <option value="3">Bachelor's</option>
-      <option value="4" selected>Graduate / Master's</option>
+      <option value="4">Graduate &amp; Master's</option>
       <option value="5">Doctoral</option>
+      <option value="6">Vocational / Trade</option>
     </select>
 
+    <select id="sel-field" aria-label="Field of study" onchange="applyFilters()">
+      <option value="">All Fields</option>
+      <option value="ai">Artificial Intelligence</option>
+      <option value="ml">Machine Learning</option>
+      <option value="ds">Data Science</option>
+      <option value="cs">Computer Science</option>
+      <option value="business">Business &amp; Management</option>
+      <option value="strategy">Technology Strategy</option>
+      <option value="cyber">Cybersecurity</option>
+      <option value="engineering">Engineering</option>
+      <option value="healthcare">Healthcare</option>
+      <option value="education">Education</option>
+      <option value="law">Law</option>
+      <option value="arts">Arts &amp; Humanities</option>
+      <option value="social">Social Sciences</option>
+    </select>
+  </div>
+
+  <!-- Row 2: Eligibility filters -->
+  <div class="filter-row">
     <select id="sel-state" aria-label="State" onchange="applyFilters()">
       <option value="">All States</option>
       <option>Alabama</option><option>Alaska</option><option>Arizona</option>
@@ -347,11 +369,34 @@
       <option value="25000,9999999">$25,000+</option>
     </select>
 
+    <select id="sel-award-type" aria-label="Award type" onchange="applyFilters()">
+      <option value="">All Types</option>
+      <option value="scholarship">Scholarship</option>
+      <option value="fellowship">Fellowship</option>
+      <option value="grant">Grant</option>
+      <option value="loan">Loan</option>
+      <option value="prize">Prize / Competition</option>
+    </select>
+  </div>
+
+  <!-- Row 3: Background / identity filters -->
+  <div class="filter-row">
+    <select id="sel-background" aria-label="Background" onchange="applyFilters()">
+      <option value="">No Preference</option>
+      <option value="firstgen">First Generation College Student</option>
+      <option value="veteran">Veteran / Military</option>
+      <option value="singleparent">Single Parent</option>
+      <option value="displaced">Displaced Worker</option>
+      <option value="adultlearner">Adult Learner (25+)</option>
+      <option value="international">International Student</option>
+    </select>
+
     <select id="sel-sort" aria-label="Sort by" onchange="applyFilters()">
       <option value="">Best Match</option>
       <option value="deadline">Deadline (Soonest)</option>
       <option value="amount-hi">Amount (Highest)</option>
       <option value="amount-lo">Amount (Lowest)</option>
+      <option value="newest">Newest</option>
     </select>
   </div>
 
@@ -530,22 +575,64 @@ function renderVisible() {
   renderPagination();
 }
 
+// ── Field-of-study keyword map ────────────────────────────────────────────────
+const FIELD_KEYWORDS = {
+  ai:          ['artificial intelligence', ' ai ', 'ai/ml', 'ai research'],
+  ml:          ['machine learning', 'deep learning', 'neural network', 'nlp'],
+  ds:          ['data science', 'data analytics', 'data analysis', 'big data'],
+  cs:          ['computer science', 'software', 'programming', 'coding'],
+  business:    ['business', 'management', 'administration', 'mba', 'finance', 'accounting'],
+  strategy:    ['technology strategy', 'tech strategy', 'strategic management', 'strategy'],
+  cyber:       ['cybersecurity', 'cyber security', 'information security', 'network security'],
+  engineering: ['engineering', 'mechanical', 'electrical', 'civil', 'aerospace'],
+  healthcare:  ['healthcare', 'health care', 'medical', 'nursing', 'medicine', 'pharmacy', 'public health'],
+  education:   ['education', 'teaching', 'teacher', 'pedagogy', 'curriculum'],
+  law:         ['law', 'legal', 'justice', 'paralegal', 'pre-law'],
+  arts:        ['arts', 'humanities', 'history', 'literature', 'philosophy', 'music', 'theater', 'film'],
+  social:      ['social science', 'sociology', 'psychology', 'political science', 'anthropology', 'economics'],
+};
+
+// ── Background keyword map ────────────────────────────────────────────────────
+const BG_KEYWORDS = {
+  firstgen:      ['first-generation', 'first gen', 'first generation', 'firstgen'],
+  veteran:       ['veteran', 'military', 'armed forces', 'active duty', 'gi bill'],
+  singleparent:  ['single parent', 'single mother', 'single father', 'single mom', 'single dad'],
+  displaced:     ['displaced worker', 'laid off', 'workforce reentry', 'career change', 'career transition'],
+  adultlearner:  ['adult learner', 'non-traditional', 'nontraditional', 'returning student', 'mature student', 'adult student'],
+  international: ['international student', 'international students', 'study abroad'],
+};
+
 // ── Client-side filter + sort ─────────────────────────────────────────────────
 function applyFilters() {
-  const stateVal  = document.getElementById('sel-state').value.toLowerCase();
-  const amtVal    = document.getElementById('sel-amount').value;
-  const sortVal   = document.getElementById('sel-sort').value;
+  const stateVal   = document.getElementById('sel-state').value.toLowerCase();
+  const amtVal     = document.getElementById('sel-amount').value;
+  const fieldVal   = document.getElementById('sel-field').value;
+  const typeVal    = document.getElementById('sel-award-type').value;
+  const bgVal      = document.getElementById('sel-background').value;
+  const sortVal    = document.getElementById('sel-sort').value;
 
   let res = [...allResults];
 
-  // State: text search in description + metadata fields
+  // Field of study
+  if (fieldVal && FIELD_KEYWORDS[fieldVal]) {
+    const terms = FIELD_KEYWORDS[fieldVal];
+    res = res.filter(s => {
+      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
+                   s.ScholarshipDescription, s.Provider, s.provider].join(' ').toLowerCase();
+      return terms.some(t => hay.includes(t));
+    });
+  }
+
+  // State (text match — also passes scholarships open to all states)
   if (stateVal) {
     res = res.filter(s => {
-      const hay = [
-        s.Description, s.description, s.ScholarshipDescription,
-        s.ScholarshipName, s.Provider, s.Location, s.location, s.State
-      ].join(' ').toLowerCase();
-      return hay.includes(stateVal) || hay.includes('all states') || hay.includes('nationwide') || hay.includes('any state');
+      const hay = [s.Description, s.description, s.ScholarshipDescription,
+                   s.ScholarshipName, s.Provider, s.Location, s.location, s.State
+                  ].join(' ').toLowerCase();
+      return hay.includes(stateVal) ||
+             hay.includes('all states') ||
+             hay.includes('nationwide') ||
+             hay.includes('any state');
     });
   }
 
@@ -558,26 +645,48 @@ function applyFilters() {
     });
   }
 
+  // Award type
+  if (typeVal) {
+    const term = typeVal === 'prize' ? ['prize', 'competition', 'contest', 'award']
+                                     : [typeVal];
+    res = res.filter(s => {
+      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
+                   s.ScholarshipDescription].join(' ').toLowerCase();
+      return term.some(t => hay.includes(t));
+    });
+  }
+
+  // Background / identity
+  if (bgVal && BG_KEYWORDS[bgVal]) {
+    const terms = BG_KEYWORDS[bgVal];
+    res = res.filter(s => {
+      const hay = [s.ScholarshipName, s.scholarshipName, s.Description, s.description,
+                   s.ScholarshipDescription].join(' ').toLowerCase();
+      return terms.some(t => hay.includes(t));
+    });
+  }
+
   // Sort
+  const far = new Date(9999, 0);
   if (sortVal === 'deadline') {
-    const far = new Date(9999, 0);
     res.sort((a, b) => {
-      const da = parseDate(pick(a,'DeadlineDate','deadlineDate','Deadline')) || far;
-      const db = parseDate(pick(b,'DeadlineDate','deadlineDate','Deadline')) || far;
+      const da = parseDate(pick(a, 'DeadlineDate','deadlineDate','Deadline')) || far;
+      const db = parseDate(pick(b, 'DeadlineDate','deadlineDate','Deadline')) || far;
       return da - db;
     });
   } else if (sortVal === 'amount-hi') {
-    res.sort((a, b) => extractAmount(pick(b,'Amount','amount')) - extractAmount(pick(a,'Amount','amount')));
+    res.sort((a, b) =>
+      extractAmount(pick(b,'Amount','amount')) - extractAmount(pick(a,'Amount','amount')));
   } else if (sortVal === 'amount-lo') {
     res.sort((a, b) => {
       const na = extractAmount(pick(a,'Amount','amount'));
       const nb = extractAmount(pick(b,'Amount','amount'));
       if (!na && !nb) return 0;
-      if (!na) return 1;
-      if (!nb) return -1;
+      if (!na) return 1; if (!nb) return -1;
       return na - nb;
     });
   }
+  // 'newest' and '' (best match) use original API order — no sort needed
 
   filtered    = res;
   currentPage = 1;
