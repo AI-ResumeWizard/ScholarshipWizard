@@ -377,10 +377,13 @@
 <script>
 "use strict";
 
-// ── Credentials (public API — read-only, attribution required) ────────────────
-const USER_ID = "fZuVoiU7XC63r1x";
-const TOKEN   = "UYS33eG01MAmKPnIB1ykTguAhSXdWXBCIHMh1bazl4S0OgbkGtr9Q69RLE49XyMGbKAi2BXb7QEyGOBZ/9/ClQ==";
-const API_BASE = `https://api.careeronestop.org/v1/scholarship/${USER_ID}`;
+// ── API endpoint ──────────────────────────────────────────────────────────────
+// Credentials live server-side in serve.py — never exposed to the browser.
+// When loaded via /widget or via iframe: window.location.origin resolves correctly.
+// If copy-pasting this HTML onto an external site (Weebly raw block), replace
+// the line below with the absolute URL of your server, e.g.:
+//   const API_URL = "https://your-app.onrender.com/api/scholarships";
+const API_URL = window.location.origin + "/api/scholarships";
 
 const PAGE_SIZE = 20;
 let allResults  = [];   // raw API results for current search
@@ -420,18 +423,17 @@ function pick(obj, ...keys) {
   return '';
 }
 
-// ── API fetch ─────────────────────────────────────────────────────────────────
+// ── API fetch (via server-side proxy — no CORS, credentials secured) ─────────
 async function apiSearch(keyword, degreeLevel) {
   const params = new URLSearchParams({ keyword: keyword || 'scholarship', limit: 100 });
   if (degreeLevel) params.set('trainingProgramLength', degreeLevel);
 
-  const resp = await fetch(`${API_BASE}?${params}`, {
-    headers: { 'Authorization': `Bearer ${TOKEN}` }
-  });
+  const resp = await fetch(`${API_URL}?${params}`);
 
   if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status} ${resp.statusText}${body ? ' — ' + body.slice(0,120) : ''}`);
+    let detail = '';
+    try { const j = await resp.json(); detail = j.error || ''; } catch { /* ignore */ }
+    throw new Error(`Server returned ${resp.status}${detail ? ': ' + detail : ''}`);
   }
   return resp.json();
 }
@@ -603,21 +605,16 @@ async function doSearch() {
     }
     applyFilters();
   } catch (err) {
-    const isCors = err.message.toLowerCase().includes('failed to fetch') ||
-                   err.message.toLowerCase().includes('networkerror') ||
-                   err.message.toLowerCase().includes('cors');
+    const isNetwork = err.message.toLowerCase().includes('failed to fetch') ||
+                      err.message.toLowerCase().includes('networkerror');
     box.innerHTML = `
       <div class="error-box">
         <strong>Could not load scholarships</strong><br><br>
-        ${isCors
-          ? `<b>CORS error</b> — the browser blocked the API request from this page's origin.
-             This is common when the widget is embedded in iframes or certain hosting platforms.<br><br>
-             <b>Options:</b><br>
-             • Open the widget directly as a standalone HTML file (no iframe)<br>
-             • Use a CORS proxy: replace <code>API_BASE</code> at the top of this file with a proxy URL<br>
-             • Or host the widget on a server that makes the API call server-side<br><br>
-             <a href="${API_BASE}?keyword=${encodeURIComponent(keyword || 'scholarship')}&limit=5"
-                target="_blank" rel="noopener noreferrer">Test the raw API response ↗</a>`
+        ${isNetwork
+          ? `<b>Network error</b> — could not reach the scholarship API server.<br><br>
+             Make sure <code>serve.py</code> is running and that <code>API_URL</code>
+             at the top of this file points to your server.<br>
+             Current: <code>${esc(API_URL)}</code>`
           : `Error: ${esc(err.message)}`
         }
       </div>`;

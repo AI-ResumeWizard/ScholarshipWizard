@@ -23,7 +23,7 @@ services:
     name: scholarship-dashboard
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0
+    startCommand: python serve.py
     envVars:
       - key: EMAIL_FROM
         sync: false
