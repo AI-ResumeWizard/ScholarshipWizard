@@ -307,12 +307,19 @@ scraped_at       = data.get("scraped_at", "") if data else ""
 available_sources = sorted({s.get("source","") for s in raw_scholarships
                              if s.get("source") and s.get("source") != "curated"})
 
+# ── URL params (for shareable links) ─────────────────────────────────────────
+_url_q      = st.query_params.get("q", "")
+_url_preset = st.query_params.get("preset", "")
+
 # ── Session-state initialization + preset handling ────────────────────────────
 if "f_initialized" not in st.session_state:
-    for k, v in PRESET_DEFS["My Full Profile"].items():
+    _start_preset = _url_preset if _url_preset in PRESET_NAMES else "My Full Profile"
+    for k, v in PRESET_DEFS[_start_preset].items():
         st.session_state[k] = v
+    if _url_q:
+        st.session_state["f_keyword"] = _url_q
     st.session_state["f_initialized"] = True
-    st.session_state["f_last_preset"] = "My Full Profile"
+    st.session_state["f_last_preset"] = _start_preset
     st.session_state["f_sources"]     = available_sources
 
 # Sync source list when new data arrives
@@ -332,7 +339,20 @@ if _current_preset != st.session_state.get("f_last_preset"):
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("🎓 Scholarship Wizard")
-    st.caption("Wake Forest MS AI Strategy")
+    st.caption("Free · Open to everyone · No login required")
+
+    # CareerOneStop attribution badge (required by terms)
+    st.markdown(
+        '<div style="background:#e3f2fd;border-radius:6px;padding:8px 10px;'
+        'margin:6px 0;font-size:11px;color:#1565c0;line-height:1.5;">'
+        '<img src="https://www.careeronestop.org/images/careeronestop-logo.png" '
+        'style="height:16px;vertical-align:middle;margin-right:5px;" '
+        'onerror="this.style.display=\'none\'">'
+        '<strong>Powered by CareerOneStop</strong><br>'
+        '<span style="color:#555;">Sponsored by U.S. Dept. of Labor</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     # ── PRESET ───────────────────────────────────────────────────────────────
     st.selectbox("⚡ Profile Preset", PRESET_NAMES, key="f_preset")
@@ -410,8 +430,8 @@ with st.sidebar:
                            key="f_sources")
 
     # ── PROFILE (scoring) ────────────────────────────────────────────────────
-    with st.expander("👤 My Profile (Scoring)", expanded=False):
-        st.caption("Checked attributes raise match scores. Unchecked = no scoring boost.")
+    with st.expander("👤 Filter by My Situation (optional)", expanded=False):
+        st.caption("Check what applies to you — boosts match scores for relevant scholarships. All optional.")
         st.checkbox("✡ Jewish identity",      key="f_pf_jewish")
         st.checkbox("📍 Michigan resident",   key="f_pf_michigan")
         st.checkbox("🔴 Ohio State alum",     key="f_pf_osu")
@@ -423,6 +443,18 @@ with st.sidebar:
     st.divider()
     run_clicked = st.button("🔄 Run Scrape Now", type="primary", use_container_width=True)
     st.caption("Scrapes all sources and updates the dashboard. No email is sent.")
+
+    # Share button — copies the current URL (with preset + keyword params) to clipboard
+    st.markdown(
+        '<button onclick="navigator.clipboard.writeText(window.location.href)'
+        '.then(()=>{this.textContent=\'✓ Link copied!\';'
+        'setTimeout(()=>this.textContent=\'📤 Share This View\',2000)})'
+        '.catch(()=>this.textContent=\'Copy failed\')"'
+        ' style="width:100%;margin-top:4px;padding:8px 0;border:1px solid #ddd;'
+        'border-radius:5px;background:#f9f9f9;cursor:pointer;font-size:13px;'
+        'font-family:inherit;color:#444;">📤 Share This View</button>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── Handle scrape run ─────────────────────────────────────────────────────────
@@ -457,9 +489,17 @@ if run_clicked:
 # ── Empty state ───────────────────────────────────────────────────────────────
 if data is None:
     st.title("🎓 Scholarship Dashboard")
+    st.markdown(
+        '<p style="font-size:15px;color:#555;margin:-8px 0 16px;">'
+        'Free and open to everyone — no account required. '
+        'Powered by <a href="https://www.careeronestop.org/" target="_blank">CareerOneStop</a> '
+        '(U.S. Department of Labor).</p>',
+        unsafe_allow_html=True,
+    )
     st.info(
         "**No scholarship data yet.**\n\n"
-        "Click **Run Scrape Now** in the sidebar, or wait for the Monday 8 am UTC cron job.",
+        "Click **Run Scrape Now** in the sidebar to fetch scholarships, "
+        "or wait for the Monday 8 am UTC cron job on Render.",
         icon="ℹ️",
     )
     st.stop()
@@ -716,8 +756,28 @@ expiring_soon = sum(
 )
 
 
+# ── Sync shareable URL params ─────────────────────────────────────────────────
+try:
+    _kw_now = st.session_state.get("f_keyword", "")
+    if _kw_now:
+        st.query_params["q"] = _kw_now
+    elif "q" in st.query_params:
+        del st.query_params["q"]
+    st.query_params["preset"] = st.session_state.get("f_preset", "My Full Profile")
+except Exception:
+    pass
+
 # ── Page header ───────────────────────────────────────────────────────────────
 st.title("🎓 Scholarship Dashboard")
+st.markdown(
+    '<p style="font-size:15px;color:#555;margin:-8px 0 12px;">'
+    'Free and open to everyone — no account required. '
+    'Search 9,500+ scholarships powered by '
+    '<a href="https://www.careeronestop.org/" target="_blank" '
+    'rel="noopener noreferrer">CareerOneStop</a> '
+    '(U.S. Department of Labor).</p>',
+    unsafe_allow_html=True,
+)
 if scraped_at:
     try:
         st.caption(f"Last scraped: {datetime.fromisoformat(scraped_at).strftime('%B %d, %Y at %I:%M %p')}")
@@ -769,11 +829,15 @@ with tab3:
 # ── Attribution footer (required by CareerOneStop terms of use) ───────────────
 st.divider()
 st.markdown(
-    '<p style="font-size:11px;color:#bbb;text-align:center;margin:0;">'
+    '<div style="text-align:center;padding:8px 0 4px;">'
+    '<img src="https://www.careeronestop.org/images/careeronestop-logo.png" '
+    'style="height:24px;vertical-align:middle;margin-right:8px;opacity:0.7;" '
+    'onerror="this.style.display=\'none\'">'
+    '<span style="font-size:11px;color:#bbb;">'
     'Scholarship data provided by '
     '<a href="https://www.careeronestop.org/" target="_blank" '
-    'rel="noopener noreferrer" style="color:#bbb;">CareerOneStop</a>, '
+    'rel="noopener noreferrer" style="color:#aaa;">CareerOneStop</a>, '
     'sponsored by the U.S. Department of Labor.'
-    '</p>',
+    '</span></div>',
     unsafe_allow_html=True,
 )

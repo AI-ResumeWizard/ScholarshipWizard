@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scholarship Search — Powered by CareerOneStop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:       #1a237e;
+      --navy-hover: #283593;
+      --blue:       #1565c0;
+      --blue-lt:    #e3f2fd;
+      --white:      #ffffff;
+      --bg:         #f4f6fb;
+      --border:     #dde1ec;
+      --muted:      #6b7280;
+      --text:       #111827;
+      --green:      #166534;
+      --green-bg:   #dcfce7;
+      --warn:       #92400e;
+      --warn-bg:    #fef3c7;
+      --red-bg:     #fef2f2;
+      --red-border: #fecaca;
+      --red-text:   #991b1b;
+      --radius:     8px;
+      --shadow:     0 1px 3px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.06);
+      --shadow-hover: 0 2px 8px rgba(0,0,0,.09), 0 8px 24px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, var(--navy) 0%, #283593 100%);
+      color: #fff;
+      padding: 22px 20px 18px;
+    }
+    .header-inner { max-width: 900px; margin: 0 auto; }
+    .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+    .header p  { margin-top: 4px; font-size: 13px; opacity: .8; }
+
+    /* ── Container ── */
+    .wrap { max-width: 900px; margin: 0 auto; padding: 16px 16px 32px; }
+
+    /* ── Search bar ── */
+    .search-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .search-row input {
+      flex: 1;
+      height: 44px;
+      padding: 0 14px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      background: var(--white);
+      transition: border-color .15s;
+    }
+    .search-row input:focus { border-color: var(--blue); }
+    .btn-search {
+      height: 44px;
+      padding: 0 22px;
+      background: var(--navy);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: background .15s;
+    }
+    .btn-search:hover  { background: var(--navy-hover); }
+    .btn-search:active { transform: scale(.98); }
+
+    /* ── Filters ── */
+    .filter-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .filter-row select {
+      height: 36px;
+      padding: 0 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      background: var(--white);
+      color: var(--text);
+      cursor: pointer;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .filter-row select:focus { border-color: var(--blue); }
+
+    /* ── Results meta ── */
+    .results-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .results-meta strong { color: var(--text); }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px 16px;
+      margin-bottom: 10px;
+      box-shadow: var(--shadow);
+      transition: transform .12s, box-shadow .12s;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-hover);
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 7px;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--navy);
+      flex: 1;
+      min-width: 180px;
+      line-height: 1.35;
+    }
+    .badge-amount {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--green);
+      background: var(--green-bg);
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .card-meta span { display: inline-flex; align-items: center; gap: 3px; }
+    .urgent { color: var(--warn); font-weight: 500; }
+    .expired { text-decoration: line-through; opacity: .6; }
+
+    .card-desc {
+      font-size: 13px;
+      color: #374151;
+      line-height: 1.55;
+      margin-bottom: 13px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .btn-apply {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 16px;
+      background: var(--navy);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background .15s;
+    }
+    .btn-apply:hover { background: var(--navy-hover); }
+    .card-url {
+      font-size: 11px;
+      color: #bbb;
+      word-break: break-all;
+      flex: 1;
+    }
+
+    /* ── Loading ── */
+    .loading {
+      text-align: center;
+      padding: 56px 0;
+      color: var(--muted);
+    }
+    .spinner {
+      width: 38px; height: 38px;
+      border: 3px solid var(--border);
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      margin: 0 auto 14px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error ── */
+    .error-box {
+      background: var(--red-bg);
+      border: 1px solid var(--red-border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      color: var(--red-text);
+      line-height: 1.6;
+    }
+    .error-box a { color: var(--blue); }
+    .error-box code {
+      background: #fee2e2;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    /* ── Empty ── */
+    .empty { text-align: center; padding: 56px 0; color: var(--muted); font-size: 15px; }
+
+    /* ── Pagination ── */
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    .pg {
+      height: 34px;
+      min-width: 34px;
+      padding: 0 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      background: var(--white);
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .1s, border-color .1s, color .1s;
+    }
+    .pg:hover { background: var(--blue-lt); border-color: var(--blue); }
+    .pg.active { background: var(--navy); border-color: var(--navy); color: #fff; }
+    .pg:disabled { opacity: .35; cursor: default; pointer-events: none; }
+
+    /* ── Footer ── */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 18px 0 12px;
+      margin-top: 28px;
+      text-align: center;
+    }
+    .footer img { height: 26px; vertical-align: middle; margin-bottom: 6px; }
+    .footer p { font-size: 11px; color: var(--muted); line-height: 1.65; }
+    .footer a { color: var(--blue); text-decoration: none; }
+
+    /* ── Responsive ── */
+    @media (max-width: 580px) {
+      .header { padding: 16px 14px 12px; }
+      .header h1 { font-size: 18px; }
+      .search-row input { font-size: 14px; }
+      .btn-search { padding: 0 14px; font-size: 13px; }
+      .card { padding: 14px 14px 12px; }
+      .card-title { font-size: 14px; }
+      .filter-row select { font-size: 12px; height: 33px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <h1>🎓 Scholarship Search</h1>
+    <p>Free · No login required · 9,500+ scholarships powered by CareerOneStop (U.S. Dept. of Labor)</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <div class="search-row">
+    <input type="text" id="keyword" value="artificial intelligence"
+           placeholder="e.g. nursing, education, AI, technology…"
+           aria-label="Search scholarships">
+    <button class="btn-search" onclick="doSearch()">Search</button>
+  </div>
+
+  <div class="filter-row">
+    <select id="sel-degree" aria-label="Degree level" onchange="applyFilters()">
+      <option value="">All Degree Levels</option>
+      <option value="1">Certificate / &lt;1 year</option>
+      <option value="2">Associate's</option>
+      <option value="3">Bachelor's</option>
+      <option value="4" selected>Graduate / Master's</option>
+      <option value="5">Doctoral</option>
+    </select>
+
+    <select id="sel-state" aria-label="State" onchange="applyFilters()">
+      <option value="">All States</option>
+      <option>Alabama</option><option>Alaska</option><option>Arizona</option>
+      <option>Arkansas</option><option>California</option><option>Colorado</option>
+      <option>Connecticut</option><option>Delaware</option><option>Florida</option>
+      <option>Georgia</option><option>Hawaii</option><option>Idaho</option>
+      <option>Illinois</option><option>Indiana</option><option>Iowa</option>
+      <option>Kansas</option><option>Kentucky</option><option>Louisiana</option>
+      <option>Maine</option><option>Maryland</option><option>Massachusetts</option>
+      <option>Michigan</option><option>Minnesota</option><option>Mississippi</option>
+      <option>Missouri</option><option>Montana</option><option>Nebraska</option>
+      <option>Nevada</option><option>New Hampshire</option><option>New Jersey</option>
+      <option>New Mexico</option><option>New York</option><option>North Carolina</option>
+      <option>North Dakota</option><option>Ohio</option><option>Oklahoma</option>
+      <option>Oregon</option><option>Pennsylvania</option><option>Rhode Island</option>
+      <option>South Carolina</option><option>South Dakota</option><option>Tennessee</option>
+      <option>Texas</option><option>Utah</option><option>Vermont</option>
+      <option>Virginia</option><option>Washington</option><option>West Virginia</option>
+      <option>Wisconsin</option><option>Wyoming</option>
+      <option>Washington D.C.</option>
+    </select>
+
+    <select id="sel-amount" aria-label="Award amount" onchange="applyFilters()">
+      <option value="">Any Amount</option>
+      <option value="0,1000">Under $1,000</option>
+      <option value="1000,5000">$1,000 – $5,000</option>
+      <option value="5000,25000">$5,000 – $25,000</option>
+      <option value="25000,9999999">$25,000+</option>
+    </select>
+
+    <select id="sel-sort" aria-label="Sort by" onchange="applyFilters()">
+      <option value="">Best Match</option>
+      <option value="deadline">Deadline (Soonest)</option>
+      <option value="amount-hi">Amount (Highest)</option>
+      <option value="amount-lo">Amount (Lowest)</option>
+    </select>
+  </div>
+
+  <div id="results-meta" class="results-meta" aria-live="polite"></div>
+  <div id="results" role="list"></div>
+  <div id="pagination" class="pagination" aria-label="Pagination"></div>
+
+  <div class="footer">
+    <img src="https://www.careeronestop.org/images/careeronestop-logo.png"
+         alt="CareerOneStop"
+         onerror="this.style.display='none'"><br>
+    <p>
+      Scholarship data provided by
+      <a href="https://www.careeronestop.org/" target="_blank" rel="noopener noreferrer">CareerOneStop</a>,
+      sponsored by the U.S. Department of Labor.<br>
+      This product was funded by a grant awarded by the U.S. Department of Labor's
+      Employment and Training Administration.
+    </p>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+"use strict";
+
+// ── Credentials (public API — read-only, attribution required) ────────────────
+const USER_ID = "fZuVoiU7XC63r1x";
+const TOKEN   = "UYS33eG01MAmKPnIB1ykTguAhSXdWXBCIHMh1bazl4S0OgbkGtr9Q69RLE49XyMGbKAi2BXb7QEyGOBZ/9/ClQ==";
+const API_BASE = `https://api.careeronestop.org/v1/scholarship/${USER_ID}`;
+
+const PAGE_SIZE = 20;
+let allResults  = [];   // raw API results for current search
+let filtered    = [];   // after client-side filters
+let currentPage = 1;
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function extractAmount(s) {
+  if (!s) return 0;
+  const nums = (String(s).match(/[\d,]+/g) || [])
+    .map(n => parseInt(n.replace(/,/g,''), 10))
+    .filter(n => n >= 100);
+  return nums.length ? Math.max(...nums) : 0;
+}
+
+function parseDate(s) {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function formatDate(s) {
+  const d = parseDate(s);
+  if (!d) return s || 'See listing';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function daysUntil(s) {
+  const d = parseDate(s);
+  return d ? Math.ceil((d - Date.now()) / 86400000) : null;
+}
+
+function pick(obj, ...keys) {
+  for (const k of keys) { if (obj[k]) return obj[k]; }
+  return '';
+}
+
+// ── API fetch ─────────────────────────────────────────────────────────────────
+async function apiSearch(keyword, degreeLevel) {
+  const params = new URLSearchParams({ keyword: keyword || 'scholarship', limit: 100 });
+  if (degreeLevel) params.set('trainingProgramLength', degreeLevel);
+
+  const resp = await fetch(`${API_BASE}?${params}`, {
+    headers: { 'Authorization': `Bearer ${TOKEN}` }
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`HTTP ${resp.status} ${resp.statusText}${body ? ' — ' + body.slice(0,120) : ''}`);
+  }
+  return resp.json();
+}
+
+// ── Render one card ───────────────────────────────────────────────────────────
+function renderCard(s) {
+  const title    = esc(pick(s, 'ScholarshipName','scholarshipName','Name') || 'Unnamed Scholarship');
+  const provider = esc(pick(s, 'Provider','provider','Organization'));
+  const amtRaw   = pick(s, 'Amount','amount','AwardAmount');
+  const dlRaw    = pick(s, 'DeadlineDate','deadlineDate','Deadline');
+  const url      = esc(pick(s, 'URL','url','ScholarshipURL','Link'));
+  const desc     = esc(pick(s, 'Description','description','ScholarshipDescription'));
+  const level    = esc(pick(s, 'TrainingProgramLengthName','trainingProgramLengthName'));
+
+  const amtNum = extractAmount(amtRaw);
+  const amtBadge = amtNum > 0
+    ? `<span class="badge-amount">💰 ${esc(amtRaw)}</span>`
+    : (amtRaw ? `<span class="badge-amount" style="background:#f5f5f5;color:#666;">${esc(amtRaw)}</span>` : '');
+
+  const days = daysUntil(dlRaw);
+  let dlHtml = '';
+  if (dlRaw) {
+    const fmtd = formatDate(dlRaw);
+    if (days === null)      dlHtml = `<span>📅 ${esc(fmtd)}</span>`;
+    else if (days < 0)      dlHtml = `<span class="expired">📅 ${esc(fmtd)} (expired)</span>`;
+    else if (days <= 7)     dlHtml = `<span class="urgent">🔥 ${esc(fmtd)} (${days}d left!)</span>`;
+    else if (days <= 30)    dlHtml = `<span class="urgent">⚠️ ${esc(fmtd)} (${days} days)</span>`;
+    else                    dlHtml = `<span>📅 ${esc(fmtd)}</span>`;
+  }
+
+  const urlShort = url.length > 60 ? url.slice(0,58) + '…' : url;
+
+  return `
+  <div class="card" role="listitem">
+    <div class="card-top">
+      <div class="card-title">${title}</div>
+      ${amtBadge}
+    </div>
+    <div class="card-meta">
+      ${provider ? `<span>🏛️ ${provider}</span>` : ''}
+      ${level    ? `<span>🎓 ${level}</span>` : ''}
+      ${dlHtml}
+    </div>
+    ${desc ? `<div class="card-desc">${desc}</div>` : ''}
+    <div class="card-actions">
+      ${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="btn-apply">Apply Now →</a>` : ''}
+      ${url ? `<span class="card-url">${urlShort}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+function renderPagination() {
+  const el    = document.getElementById('pagination');
+  const pages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (pages <= 1) { el.innerHTML = ''; return; }
+
+  let html = `<button class="pg" onclick="goPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>`;
+  let last = 0;
+  for (let i = 1; i <= pages; i++) {
+    if (i === 1 || i === pages || Math.abs(i - currentPage) <= 1) {
+      if (last && i - last > 1) html += `<button class="pg" disabled>…</button>`;
+      html += `<button class="pg ${i === currentPage ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
+      last = i;
+    }
+  }
+  html += `<button class="pg" onclick="goPage(${currentPage + 1})" ${currentPage === pages ? 'disabled' : ''}>Next ›</button>`;
+  el.innerHTML = html;
+}
+
+function goPage(n) {
+  const pages = Math.ceil(filtered.length / PAGE_SIZE);
+  if (n < 1 || n > pages) return;
+  currentPage = n;
+  renderVisible();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderVisible() {
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const page  = filtered.slice(start, start + PAGE_SIZE);
+  const meta  = document.getElementById('results-meta');
+  const box   = document.getElementById('results');
+
+  if (!page.length) {
+    box.innerHTML  = '<div class="empty">No scholarships match these filters.<br><small>Try adjusting your search or clearing filters.</small></div>';
+    meta.innerHTML = '';
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  meta.innerHTML = `Showing <strong>${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)}</strong> of <strong>${filtered.length.toLocaleString()}</strong> scholarships`;
+  box.innerHTML  = page.map(renderCard).join('');
+  renderPagination();
+}
+
+// ── Client-side filter + sort ─────────────────────────────────────────────────
+function applyFilters() {
+  const stateVal  = document.getElementById('sel-state').value.toLowerCase();
+  const amtVal    = document.getElementById('sel-amount').value;
+  const sortVal   = document.getElementById('sel-sort').value;
+
+  let res = [...allResults];
+
+  // State: text search in description + metadata fields
+  if (stateVal) {
+    res = res.filter(s => {
+      const hay = [
+        s.Description, s.description, s.ScholarshipDescription,
+        s.ScholarshipName, s.Provider, s.Location, s.location, s.State
+      ].join(' ').toLowerCase();
+      return hay.includes(stateVal) || hay.includes('all states') || hay.includes('nationwide') || hay.includes('any state');
+    });
+  }
+
+  // Amount range
+  if (amtVal) {
+    const [lo, hi] = amtVal.split(',').map(Number);
+    res = res.filter(s => {
+      const n = extractAmount(pick(s, 'Amount','amount','AwardAmount'));
+      return n === 0 || (n >= lo && n <= hi);
+    });
+  }
+
+  // Sort
+  if (sortVal === 'deadline') {
+    const far = new Date(9999, 0);
+    res.sort((a, b) => {
+      const da = parseDate(pick(a,'DeadlineDate','deadlineDate','Deadline')) || far;
+      const db = parseDate(pick(b,'DeadlineDate','deadlineDate','Deadline')) || far;
+      return da - db;
+    });
+  } else if (sortVal === 'amount-hi') {
+    res.sort((a, b) => extractAmount(pick(b,'Amount','amount')) - extractAmount(pick(a,'Amount','amount')));
+  } else if (sortVal === 'amount-lo') {
+    res.sort((a, b) => {
+      const na = extractAmount(pick(a,'Amount','amount'));
+      const nb = extractAmount(pick(b,'Amount','amount'));
+      if (!na && !nb) return 0;
+      if (!na) return 1;
+      if (!nb) return -1;
+      return na - nb;
+    });
+  }
+
+  filtered    = res;
+  currentPage = 1;
+  renderVisible();
+}
+
+// ── Main search ───────────────────────────────────────────────────────────────
+async function doSearch() {
+  const keyword = document.getElementById('keyword').value.trim();
+  const degree  = document.getElementById('sel-degree').value;
+  const box     = document.getElementById('results');
+  const meta    = document.getElementById('results-meta');
+
+  box.innerHTML  = '<div class="loading"><div class="spinner"></div><p>Searching scholarships…</p></div>';
+  meta.innerHTML = '';
+  document.getElementById('pagination').innerHTML = '';
+
+  try {
+    const data = await apiSearch(keyword, degree);
+    allResults = data.Scholarships || data.scholarships || data.ScholarshipList || [];
+    if (!allResults.length && !data.Count) {
+      // Some error responses look like success — check for expected shape
+      box.innerHTML = '<div class="empty">No scholarships found for this search.<br><small>Try a different keyword.</small></div>';
+      return;
+    }
+    applyFilters();
+  } catch (err) {
+    const isCors = err.message.toLowerCase().includes('failed to fetch') ||
+                   err.message.toLowerCase().includes('networkerror') ||
+                   err.message.toLowerCase().includes('cors');
+    box.innerHTML = `
+      <div class="error-box">
+        <strong>Could not load scholarships</strong><br><br>
+        ${isCors
+          ? `<b>CORS error</b> — the browser blocked the API request from this page's origin.
+             This is common when the widget is embedded in iframes or certain hosting platforms.<br><br>
+             <b>Options:</b><br>
+             • Open the widget directly as a standalone HTML file (no iframe)<br>
+             • Use a CORS proxy: replace <code>API_BASE</code> at the top of this file with a proxy URL<br>
+             • Or host the widget on a server that makes the API call server-side<br><br>
+             <a href="${API_BASE}?keyword=${encodeURIComponent(keyword || 'scholarship')}&limit=5"
+                target="_blank" rel="noopener noreferrer">Test the raw API response ↗</a>`
+          : `Error: ${esc(err.message)}`
+        }
+      </div>`;
+  }
+}
+
+// Enter key on search box
+document.getElementById('keyword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doSearch();
+});
+
+// Auto-search on load
+doSearch();
+</script>
+
+</body>
+</html>
