@@ -12,6 +12,7 @@ import os
 import re
 import smtplib
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -199,6 +200,24 @@ SOURCES = [
         "item_selector": "article, .card, h2, h3",
         "title_selector": "h2, h3",
         "amount_selector": None,
+        "deadline_selector": None,
+    },
+    {
+        "name": "Niche – Graduate Scholarships",
+        "type": "list",
+        "url": "https://www.niche.com/colleges/scholarships/?type=scholarship&degree=graduate",
+        "item_selector": ".search-result, .scholarship-search-result, article.card, .card",
+        "title_selector": "h2, h3, .card__title, [class*='title']",
+        "amount_selector": "[class*='amount'], [class*='award'], [class*='stat']",
+        "deadline_selector": None,
+    },
+    {
+        "name": "GoingMerry – AI/Tech Scholarships",
+        "type": "list",
+        "url": "https://www.goingmerry.com/scholarships?degree=graduate&field=technology",
+        "item_selector": ".scholarship-card, [class*='scholarship'], article, .card",
+        "title_selector": "h2, h3, [class*='title'], [class*='name']",
+        "amount_selector": "[class*='amount'], [class*='award']",
         "deadline_selector": None,
     },
 ]
@@ -729,6 +748,70 @@ def fetch_scholarshipapi(api_key):
     return results
 
 
+def fetch_grants_gov():
+    """
+    Grants.gov Opportunity Search API (free, no key needed — U.S. federal grants).
+    POST https://apply07.grants.gov/grantsws/rest/opportunities/search/
+    """
+    _GG_KEYWORDS = [
+        "scholarship education AI",
+        "STEM graduate scholarship",
+        "technology strategy fellowship",
+    ]
+    results = []
+    seen_in_api: set = set()
+
+    for keyword in _GG_KEYWORDS:
+        try:
+            resp = requests.post(
+                "https://apply07.grants.gov/grantsws/rest/opportunities/search/",
+                json={
+                    "keyword":     keyword,
+                    "oppStatuses": "forecasted|posted",
+                    "rows":        25,
+                    "startRecordNum": 0,
+                },
+                timeout=20,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"    [warn] Grants.gov '{keyword}': {e}")
+            time.sleep(1)
+            continue
+
+        hits = data.get("oppHits") or []
+        added = 0
+        for h in hits:
+            title = (h.get("title") or h.get("oppTitle") or "").strip()
+            if not title:
+                continue
+            key = uid(title)
+            if key in seen_in_api:
+                continue
+            seen_in_api.add(key)
+
+            synopsis = h.get("synopsis") or {}
+            desc     = synopsis.get("text", "") if isinstance(synopsis, dict) else str(synopsis)
+            opp_id   = h.get("id") or h.get("number") or ""
+            results.append({
+                "title":      title[:120],
+                "provider":   (h.get("agencyName") or h.get("agency") or "U.S. Federal Government"),
+                "amount":     str(h.get("awardCeiling") or h.get("estimatedTotalProgramFunding") or "See listing")[:80],
+                "deadline":   (h.get("closeDate") or h.get("closingDate") or "Check website")[:80],
+                "url":        f"https://www.grants.gov/view-opportunity.html?oppId={opp_id}",
+                "source_url": "https://www.grants.gov/",
+                "raw_text":   f"{title} {desc}"[:500],
+                "source":     "Grants.gov (Federal)",
+            })
+            added += 1
+
+        print(f"    Grants.gov '{keyword}': {len(hits)} returned, {added} new")
+        time.sleep(1)
+
+    return results
+
+
 # ── Phase 2: Categorization ───────────────────────────────────────────────────
 def categorize(s):
     text = (
@@ -1019,8 +1102,12 @@ def build_email(high, medium, low):
       Scoring: edit <code>score_scholarship()</code> in scraper.py · Curated: edit <code>CURATED</code> list
     </p>
     <p style="font-size:10px;color:#ccc;text-align:center;margin:10px 0 0;line-height:1.6;">
-      Scholarship data provided by <a href="https://www.careeronestop.org/" style="color:#ccc;">CareerOneStop</a>,
-      sponsored by the U.S. Department of Labor.
+      Scholarship data provided by <a href="https://www.careeronestop.org/" style="color:#ccc;">CareerOneStop</a>
+      (sponsored by the U.S. Department of Labor),
+      <a href="https://www.grants.gov/" style="color:#ccc;">Grants.gov</a>,
+      <a href="https://www.fastweb.com/" style="color:#ccc;">Fastweb</a>,
+      <a href="https://www.niche.com/" style="color:#ccc;">Niche</a>, and
+      <a href="https://www.goingmerry.com/" style="color:#ccc;">GoingMerry</a>.
     </p>
   </div>
 </body></html>"""
@@ -1060,16 +1147,28 @@ def main(scrape_only=False):
         time.sleep(2)
     print(f"\nPhase 1: {len(raw)} items from scrapers")
 
-    # Phase 1b: optional API integrations
-    print("Phase 1b: API integrations...")
+    # Phase 1b: API integrations — run in parallel to save time
+    print("Phase 1b: API integrations (parallel)...")
     _before = len(raw)
-    raw.extend(fetch_careeronestop(
-        os.environ.get("CAREERONESTOP_TOKEN"),
-        os.environ.get("CAREERONESTOP_USER_ID"),
-    ))
-    raw.extend(fetch_scholarshipapi(
-        os.environ.get("SCHOLARSHIPAPI_KEY"),
-    ))
+    _cos_token  = os.environ.get("CAREERONESTOP_TOKEN")
+    _cos_uid    = os.environ.get("CAREERONESTOP_USER_ID")
+    _sapi_key   = os.environ.get("SCHOLARSHIPAPI_KEY")
+
+    _api_tasks = {
+        "CareerOneStop": lambda: fetch_careeronestop(_cos_token, _cos_uid),
+        "Grants.gov":    fetch_grants_gov,
+        "ScholarshipAPI": lambda: fetch_scholarshipapi(_sapi_key),
+    }
+    with ThreadPoolExecutor(max_workers=3) as _pool:
+        _futures = {_pool.submit(fn): name for name, fn in _api_tasks.items()}
+        for _f in as_completed(_futures):
+            _src = _futures[_f]
+            try:
+                _items = _f.result()
+                print(f"  {_src}: {len(_items)} items")
+                raw.extend(_items)
+            except Exception as _exc:
+                print(f"  [warn] {_src} failed: {_exc}")
     print(f"API integrations added {len(raw) - _before} items — total: {len(raw)}")
 
     # Dedup scraped against seen and within this run
