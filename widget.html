@@ -360,7 +360,7 @@
 <div class="header">
   <div class="header-inner">
     <h1>🎓 Scholarship Search</h1>
-    <p>Free · No login required · Powered by CareerOneStop, Grants.gov, Fastweb, Niche, GoingMerry &amp; more</p>
+    <p>Free · No login required · Powered by CareerOneStop, Grants.gov, Scholarships.com, GoingMerry &amp; more</p>
   </div>
 </div>
 
@@ -476,8 +476,8 @@
     <label class="source-check"><input type="checkbox" id="src-all" checked onchange="onSourceAll()"> All</label>
     <label class="source-check"><input type="checkbox" id="src-cos" checked onchange="onSourceCheck()"> CareerOneStop</label>
     <label class="source-check"><input type="checkbox" id="src-gg" checked onchange="onSourceCheck()"> Grants.gov</label>
-    <label class="source-check"><input type="checkbox" id="src-fastweb" checked onchange="onSourceCheck()"> Fastweb</label>
-    <label class="source-check"><input type="checkbox" id="src-niche" checked onchange="onSourceCheck()"> Niche</label>
+    <label class="source-check"><input type="checkbox" id="src-sc" checked onchange="onSourceCheck()"> Scholarships.com</label>
+    <label class="source-check"><input type="checkbox" id="src-sag" checked onchange="onSourceCheck()"> ScholarshipsAndGrants</label>
     <label class="source-check"><input type="checkbox" id="src-gm" checked onchange="onSourceCheck()"> GoingMerry</label>
     <label class="source-check"><input type="checkbox" id="src-sapi" checked onchange="onSourceCheck()"> ScholarshipAPI</label>
   </div>
@@ -496,8 +496,8 @@
       <a href="https://www.careeronestop.org/" target="_blank" rel="noopener noreferrer">CareerOneStop</a>
       (sponsored by the U.S. Department of Labor),
       <a href="https://www.grants.gov/" target="_blank" rel="noopener noreferrer">Grants.gov</a>,
-      <a href="https://www.fastweb.com/" target="_blank" rel="noopener noreferrer">Fastweb</a>,
-      <a href="https://www.niche.com/" target="_blank" rel="noopener noreferrer">Niche</a>, and
+      <a href="https://www.scholarships.com/" target="_blank" rel="noopener noreferrer">Scholarships.com</a>,
+      <a href="https://scholarshipsandgrants.us/" target="_blank" rel="noopener noreferrer">ScholarshipsAndGrants.us</a>, and
       <a href="https://www.goingmerry.com/" target="_blank" rel="noopener noreferrer">GoingMerry</a>.<br>
       CareerOneStop is funded by a grant awarded by the U.S. Department of Labor's Employment and Training Administration.
     </p>
@@ -521,22 +521,22 @@ let currentPage = 1;
 
 // ── Source badge colors ───────────────────────────────────────────────────────
 const SOURCE_COLORS = {
-  'CareerOneStop':        { bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
-  'Grants.gov (Federal)': { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
-  'Fastweb':              { bg: '#fff3e0', color: '#e65100', border: '#ffcc80' },
-  'Niche':                { bg: '#fce4ec', color: '#880e4f', border: '#f48fb1' },
-  'GoingMerry':           { bg: '#f3e5f5', color: '#6a1b9a', border: '#ce93d8' },
-  'ScholarshipAPI':       { bg: '#e0f2f1', color: '#00695c', border: '#80cbc4' },
+  'CareerOneStop Training': { bg: '#e3f2fd', color: '#1565c0', border: '#90caf9' },
+  'Grants.gov (Federal)':   { bg: '#e8f5e9', color: '#2e7d32', border: '#a5d6a7' },
+  'Scholarships.com':       { bg: '#fff8e1', color: '#f57f17', border: '#ffe082' },
+  'ScholarshipsAndGrants':  { bg: '#fce4ec', color: '#880e4f', border: '#f48fb1' },
+  'GoingMerry':             { bg: '#f3e5f5', color: '#6a1b9a', border: '#ce93d8' },
+  'ScholarshipAPI':         { bg: '#e0f2f1', color: '#00695c', border: '#80cbc4' },
 };
 
 // Map checkbox IDs → Source field values returned by the API
 const SOURCE_ID_MAP = {
-  'src-cos':     'CareerOneStop',
-  'src-gg':      'Grants.gov (Federal)',
-  'src-fastweb': 'Fastweb',
-  'src-niche':   'Niche',
-  'src-gm':      'GoingMerry',
-  'src-sapi':    'ScholarshipAPI',
+  'src-cos':  'CareerOneStop Training',
+  'src-gg':   'Grants.gov (Federal)',
+  'src-sc':   'Scholarships.com',
+  'src-sag':  'ScholarshipsAndGrants',
+  'src-gm':   'GoingMerry',
+  'src-sapi': 'ScholarshipAPI',
 };
 
 function getActiveSources() {

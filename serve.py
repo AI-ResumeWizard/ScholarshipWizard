@@ -4,9 +4,18 @@ serve.py — Single entrypoint for the scholarship app.
 Routes:
   GET  /              → redirect to /widget
   GET  /widget        → serve widget.html (embeddable scholarship search)
-  GET  /api/scholarships → CareerOneStop API proxy (server-side, no CORS issues)
+  GET  /api/scholarships → multi-source scholarship proxy (server-side, no CORS)
+  GET  /api/health    → live source health check
   ALL  /dashboard*    → HTTP reverse proxy to Streamlit (port 8501)
   WS   /dashboard/_stcore/stream → WebSocket proxy to Streamlit
+
+Sources (parallel):
+  - CareerOneStop Training API (/v1/training — requires env vars)
+  - Grants.gov federal opportunities (no key needed)
+  - Scholarships.com AI scholarships page (scraped)
+  - ScholarshipsAndGrants.us AI/ML page (scraped)
+  - GoingMerry graduate scholarships (scraped)
+  - ScholarshipAPI.com (optional — requires SCHOLARSHIPAPI_KEY)
 
 Streamlit is started as a background subprocess and polled until ready.
 """
@@ -118,159 +127,174 @@ def _dedup(results: list) -> list:
     return out
 
 
-# ── CareerOneStop documented params (extras cause 404) ───────────────────────
-_COS_SUPPORTED_PARAMS = frozenset({
-    "keyword", "limit", "startRecord",
-    "trainingProgramLength", "sortColumns", "sortOrder",
-})
-
-
-def _build_cos_params(params: dict) -> dict:
-    p = {k: v for k, v in params.items() if k in _COS_SUPPORTED_PARAMS}
-    p.setdefault("keyword", "scholarship")
-    p.setdefault("limit",   "50")
-    return p
-
-
-def _build_cos_url(user_id: str, params: dict) -> str:
-    return (f"https://api.careeronestop.org/v1/scholarship/{user_id}"
-            f"?{urlencode(_build_cos_params(params))}")
-
-
 # ── Source fetchers (each returns a list of normalized dicts) ─────────────────
-def _fetch_cos(user_id: str, token: str, params: dict) -> list:
-    url = _build_cos_url(user_id, params)
-    print(f"[COS] {url}")
+
+def _fetch_cos_training(user_id: str, token: str, keyword: str, location: str = "") -> list:
+    """
+    CareerOneStop /v1/training/{userId}/scholarship — the endpoint that actually exists.
+    The /v1/scholarship endpoint returns 404; scholarship data is licensed from Gale Group.
+    """
+    url = (f"https://api.careeronestop.org/v1/training/{user_id}/scholarship"
+           f"?keyword={_url_quote(keyword or 'scholarship')}"
+           f"&trainingProgramLength=4&sortColumns=1&sortOrder=0&enableMetaData=true")
+    if location:
+        url += f"&location={_url_quote(location)}"
+    print(f"[COS-Training] GET {url}")
     r = _req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=20)
-    print(f"[COS] HTTP {r.status_code}")
+    print(f"[COS-Training] HTTP {r.status_code}")
     if r.status_code != 200:
-        print(f"[COS] body: {r.text[:200]}")
+        print(f"[COS-Training] body: {r.text[:200]}")
         return []
     data  = r.json()
-    items = data.get("Scholarships") or data.get("scholarships") or []
-    for s in items:
-        s["Source"] = "CareerOneStop"
-    return items
+    items = (data.get("TrainingPrograms") or data.get("trainingPrograms")
+             or data.get("Scholarships") or data.get("scholarships") or [])
+    out = []
+    for s in items[:50]:
+        name = (s.get("TrainingName") or s.get("ScholarshipName")
+                or s.get("ProgramName") or s.get("Name") or "").strip()
+        if not name:
+            continue
+        out.append({
+            "ScholarshipName": name[:120],
+            "Provider":        (s.get("ProviderName") or s.get("Provider")
+                               or s.get("Organization") or "CareerOneStop"),
+            "Amount":          str(s.get("Amount") or s.get("TuitionAmount") or "See listing"),
+            "DeadlineDate":    s.get("DeadlineDate") or s.get("ApplicationDeadline") or "",
+            "URL":             (s.get("URL") or s.get("TrainingURL") or s.get("Link")
+                               or "https://www.careeronestop.org/toolkit/training/find-scholarships.aspx"),
+            "Description":     (s.get("Description") or s.get("TrainingDescription") or "")[:300],
+            "Source":          "CareerOneStop Training",
+        })
+    return out
 
 
 def _fetch_grants_gov(keyword: str) -> list:
-    url  = "https://apply07.grants.gov/grantsws/rest/opportunities/search/"
     body = {
-        "keyword":     keyword or "scholarship education",
-        "oppStatuses": "forecasted|posted",
-        "rows":        25,
+        "keyword":        keyword or "scholarship AI technology graduate",
+        "oppStatuses":    "forecasted|posted",
+        "rows":           50,
         "startRecordNum": 0,
     }
     print(f"[Grants.gov] POST keyword={keyword!r}")
-    r = _req.post(url, json=body, timeout=15)
+    r = _req.post(
+        "https://apply07.grants.gov/grantsws/rest/opportunities/search/",
+        json=body, timeout=15,
+    )
     print(f"[Grants.gov] HTTP {r.status_code}")
     if r.status_code != 200:
         return []
     hits = r.json().get("oppHits") or []
     out  = []
-    for h in hits[:25]:
+    for h in hits[:50]:
+        title = (h.get("title") or h.get("oppTitle") or "").strip()
+        if not title:
+            continue
         synopsis = h.get("synopsis") or {}
         desc     = synopsis.get("text", "") if isinstance(synopsis, dict) else str(synopsis)
         opp_id   = h.get("id") or h.get("number") or ""
+        info_url = (h.get("additionalInformationUrl")
+                    or f"https://www.grants.gov/view-opportunity.html?oppId={opp_id}")
         out.append({
-            "ScholarshipName": (h.get("title") or h.get("oppTitle") or "Federal Grant Opportunity")[:120],
+            "ScholarshipName": title[:120],
             "Provider":        h.get("agencyName") or h.get("agency") or "U.S. Federal Government",
             "Amount":          str(h.get("awardCeiling") or h.get("estimatedTotalProgramFunding") or "See listing"),
             "DeadlineDate":    h.get("closeDate") or h.get("closingDate") or "",
-            "URL":             f"https://www.grants.gov/view-opportunity.html?oppId={opp_id}",
+            "URL":             info_url,
             "Description":     desc[:300],
             "Source":          "Grants.gov (Federal)",
         })
     return out
 
 
-def _fetch_fastweb(keyword: str) -> list:
-    url  = "https://www.fastweb.com/college-scholarships/articles/fastweb-s-scholarship-directory"
-    print(f"[Fastweb] GET {url}")
-    r    = _req.get(url, headers=_SCRAPE_HEADERS, timeout=15)
-    print(f"[Fastweb] HTTP {r.status_code}")
+def _fetch_scholarships_com(keyword: str) -> list:
+    url = ("https://www.scholarships.com/financial-aid/college-scholarships/"
+           "scholarships-by-type/ai-artificial-intelligence-scholarships/")
+    print(f"[Scholarships.com] GET {url}")
+    r = _req.get(url, headers=_SCRAPE_HEADERS, timeout=15)
+    print(f"[Scholarships.com] HTTP {r.status_code}")
     if r.status_code != 200:
         return []
     soup = BeautifulSoup(r.text, "lxml")
     out  = []
-    for h in soup.select("h2, h3")[:30]:
-        title = h.get_text(strip=True)
-        if not title or len(title) < 10:
-            continue
-        link  = h.find("a", href=True)
-        href  = link["href"] if link else url
-        if href.startswith("/"):
-            href = "https://www.fastweb.com" + href
-        nxt  = h.find_next_sibling("p")
-        desc = nxt.get_text(strip=True)[:300] if nxt else ""
-        out.append({
-            "ScholarshipName": title[:120],
-            "Provider":        "Fastweb",
-            "Amount":          "See listing",
-            "DeadlineDate":    "",
-            "URL":             href,
-            "Description":     desc,
-            "Source":          "Fastweb",
-        })
-        if len(out) >= 20:
-            break
-    return out
-
-
-def _fetch_niche(keyword: str) -> list:
-    url  = (f"https://www.niche.com/colleges/scholarships/"
-            f"?q={_url_quote(keyword or 'scholarship')}&type=scholarship")
-    print(f"[Niche] GET {url}")
-    r    = _req.get(url, headers=_SCRAPE_HEADERS, timeout=15)
-    print(f"[Niche] HTTP {r.status_code}")
-    if r.status_code != 200:
-        return []
-    soup = BeautifulSoup(r.text, "lxml")
-    out  = []
-    for card in soup.select(".search-result, .scholarship-search-result, article.card, .card")[:20]:
-        title_el = card.select_one("h2, h3, .card__title, .scholarship-name, [class*='title']")
+    for item in soup.select(".scholarship-item, article, .result-item, .listing, .card")[:40]:
+        title_el = item.select_one("h2, h3, .scholarship-name, .title, a")
         if not title_el:
             continue
         title = title_el.get_text(strip=True)
-        if not title or len(title) < 6:
+        if not title or len(title) < 8:
             continue
-        link  = card.find("a", href=True)
-        href  = link["href"] if link else url
+        link = title_el.find("a", href=True) or item.find("a", href=True)
+        href = link["href"] if link else url
         if href.startswith("/"):
-            href = "https://www.niche.com" + href
-        amt_el = card.select_one("[class*='amount'], [class*='award'], [class*='stat']")
+            href = "https://www.scholarships.com" + href
+        amt_el = item.select_one(".amount, .award, .scholarship-amount")
         amount = amt_el.get_text(strip=True) if amt_el else "See listing"
         out.append({
             "ScholarshipName": title[:120],
-            "Provider":        "Niche.com",
+            "Provider":        "Scholarships.com",
             "Amount":          amount,
             "DeadlineDate":    "",
             "URL":             href,
             "Description":     "",
-            "Source":          "Niche",
+            "Source":          "Scholarships.com",
+        })
+    return out
+
+
+def _fetch_scholarshipsandgrants(keyword: str) -> list:
+    url = "https://scholarshipsandgrants.us/major/ai-ml/"
+    print(f"[ScholarshipsAndGrants] GET {url}")
+    r = _req.get(url, headers=_SCRAPE_HEADERS, timeout=15)
+    print(f"[ScholarshipsAndGrants] HTTP {r.status_code}")
+    if r.status_code != 200:
+        return []
+    soup = BeautifulSoup(r.text, "lxml")
+    out  = []
+    for item in soup.select("article, .scholarship, .entry")[:40]:
+        title_el = item.select_one("h2, h3, .entry-title")
+        if not title_el:
+            continue
+        title = title_el.get_text(strip=True)
+        if not title or len(title) < 8:
+            continue
+        link = title_el.find("a", href=True) or item.find("a", href=True)
+        href = link["href"] if link else url
+        if href.startswith("/"):
+            href = "https://scholarshipsandgrants.us" + href
+        amt_el = item.select_one(".amount")
+        amount = amt_el.get_text(strip=True) if amt_el else "See listing"
+        out.append({
+            "ScholarshipName": title[:120],
+            "Provider":        "ScholarshipsAndGrants.us",
+            "Amount":          amount,
+            "DeadlineDate":    "",
+            "URL":             href,
+            "Description":     "",
+            "Source":          "ScholarshipsAndGrants",
         })
     return out
 
 
 def _fetch_goingmerry(keyword: str) -> list:
-    url  = (f"https://www.goingmerry.com/scholarships"
-            f"?q={_url_quote(keyword or 'scholarship')}")
+    url = "https://www.goingmerry.com/scholarships?degree=graduate"
+    if keyword:
+        url += f"&q={_url_quote(keyword)}"
     print(f"[GoingMerry] GET {url}")
-    r    = _req.get(url, headers=_SCRAPE_HEADERS, timeout=15)
+    r = _req.get(url, headers=_SCRAPE_HEADERS, timeout=15)
     print(f"[GoingMerry] HTTP {r.status_code}")
     if r.status_code != 200:
         return []
     soup = BeautifulSoup(r.text, "lxml")
     out  = []
-    for card in soup.select(".scholarship-card, [class*='scholarship'], article, .card")[:20]:
+    for card in soup.select(".scholarship-card, [class*='scholarship'], article, .card")[:30]:
         title_el = card.select_one("h2, h3, [class*='title'], [class*='name']")
         if not title_el:
             continue
         title = title_el.get_text(strip=True)
         if not title or len(title) < 6:
             continue
-        link  = card.find("a", href=True)
-        href  = link["href"] if link else url
+        link = card.find("a", href=True)
+        href = link["href"] if link else url
         if href.startswith("/"):
             href = "https://www.goingmerry.com" + href
         amt_el = card.select_one("[class*='amount'], [class*='award']")
@@ -315,19 +339,21 @@ def _fetch_scholarshipapi(api_key: str, keyword: str) -> list:
 
 
 # ── Parallel orchestrator ──────────────────────────────────────────────────────
-def _fetch_all(user_id: str, token: str, cos_params: dict,
-               sapi_key: str, keyword: str) -> tuple[list, dict]:
+def _fetch_all(user_id: str, token: str, keyword: str,
+               location: str, sapi_key: str) -> tuple[list, dict]:
     """
     Call all sources in parallel. Returns (merged_list, source_breakdown).
+    COS Training only runs when credentials are present.
     Sources that don't respond within _MULTI_TIMEOUT are skipped gracefully.
     """
-    tasks = {
-        "CareerOneStop":     lambda: _fetch_cos(user_id, token, cos_params),
-        "Grants.gov":        lambda: _fetch_grants_gov(keyword),
-        "Fastweb":           lambda: _fetch_fastweb(keyword),
-        "Niche":             lambda: _fetch_niche(keyword),
-        "GoingMerry":        lambda: _fetch_goingmerry(keyword),
+    tasks: dict = {
+        "Grants.gov":          lambda: _fetch_grants_gov(keyword),
+        "Scholarships.com":    lambda: _fetch_scholarships_com(keyword),
+        "ScholarshipsAndGrants": lambda: _fetch_scholarshipsandgrants(keyword),
+        "GoingMerry":          lambda: _fetch_goingmerry(keyword),
     }
+    if user_id and token:
+        tasks["CareerOneStop Training"] = lambda: _fetch_cos_training(user_id, token, keyword, location)
     if sapi_key:
         tasks["ScholarshipAPI"] = lambda: _fetch_scholarshipapi(sapi_key, keyword)
 
@@ -385,41 +411,43 @@ def api_health():
         "SCHOLARSHIPAPI_KEY_set":      bool(sapi_key),
     }
 
-    # ── Ping CareerOneStop ────────────────────────────────────────────────────
+    # ── Ping CareerOneStop Training endpoint (not /scholarship — that 404s) ──
     if user_id and token:
-        test_url = (f"https://api.careeronestop.org/v1/scholarship/{user_id}"
-                    f"?keyword=nursing&limit=10")
-        result["cos_test_url"] = test_url
-        print(f"[health] COS ping: {test_url}")
+        test_url = (f"https://api.careeronestop.org/v1/training/{user_id}/scholarship"
+                    f"?keyword=scholarship&trainingProgramLength=4&sortColumns=1&sortOrder=0"
+                    f"&enableMetaData=true")
+        result["cos_training_test_url"] = test_url
+        print(f"[health] COS-Training ping: {test_url}")
         try:
             ping = _req.get(
                 test_url,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=10,
             )
-            result["cos_ping_status"] = ping.status_code
-            result["cos_ping_ok"]     = ping.status_code == 200
+            result["cos_training_ping_status"] = ping.status_code
+            result["cos_training_ping_ok"]     = ping.status_code == 200
             if ping.status_code != 200:
-                result["cos_ping_body"] = ping.text[:300]
+                result["cos_training_ping_body"] = ping.text[:300]
             else:
                 try:
                     data  = ping.json()
-                    count = len(data.get("Scholarships") or data.get("scholarships") or [])
-                    result["cos_ping_count"] = count
+                    items = (data.get("TrainingPrograms") or data.get("trainingPrograms")
+                             or data.get("Scholarships") or [])
+                    result["cos_training_ping_count"] = len(items)
                 except Exception:
                     pass
         except Exception as exc:
-            result["cos_ping_error"] = str(exc)
+            result["cos_training_ping_error"] = str(exc)
     else:
-        result["cos_ping_ok"] = False
-        result["cos_ping_error"] = "credentials not set"
+        result["cos_training_ping_ok"] = False
+        result["cos_training_ping_note"] = "credentials not set — COS Training will be skipped"
 
     # ── Ping Grants.gov ───────────────────────────────────────────────────────
     print("[health] Grants.gov ping")
     try:
         gg = _req.post(
             "https://apply07.grants.gov/grantsws/rest/opportunities/search/",
-            json={"keyword": "nursing scholarship", "oppStatuses": "posted", "rows": 1},
+            json={"keyword": "scholarship graduate", "oppStatuses": "posted", "rows": 1},
             timeout=10,
         )
         result["grantsgov_ping_status"] = gg.status_code
@@ -427,6 +455,46 @@ def api_health():
     except Exception as exc:
         result["grantsgov_ping_ok"]    = False
         result["grantsgov_ping_error"] = str(exc)
+
+    # ── Ping Scholarships.com ─────────────────────────────────────────────────
+    print("[health] Scholarships.com ping")
+    try:
+        sc = _req.get(
+            "https://www.scholarships.com/financial-aid/college-scholarships/"
+            "scholarships-by-type/ai-artificial-intelligence-scholarships/",
+            headers=_SCRAPE_HEADERS, timeout=10,
+        )
+        result["scholarships_com_ping_status"] = sc.status_code
+        result["scholarships_com_ping_ok"]     = sc.status_code == 200
+    except Exception as exc:
+        result["scholarships_com_ping_ok"]    = False
+        result["scholarships_com_ping_error"] = str(exc)
+
+    # ── Ping ScholarshipsAndGrants.us ─────────────────────────────────────────
+    print("[health] ScholarshipsAndGrants.us ping")
+    try:
+        sg = _req.get(
+            "https://scholarshipsandgrants.us/major/ai-ml/",
+            headers=_SCRAPE_HEADERS, timeout=10,
+        )
+        result["scholarshipsandgrants_ping_status"] = sg.status_code
+        result["scholarshipsandgrants_ping_ok"]     = sg.status_code == 200
+    except Exception as exc:
+        result["scholarshipsandgrants_ping_ok"]    = False
+        result["scholarshipsandgrants_ping_error"] = str(exc)
+
+    # ── Ping GoingMerry ───────────────────────────────────────────────────────
+    print("[health] GoingMerry ping")
+    try:
+        gm = _req.get(
+            "https://www.goingmerry.com/scholarships?degree=graduate",
+            headers=_SCRAPE_HEADERS, timeout=10,
+        )
+        result["goingmerry_ping_status"] = gm.status_code
+        result["goingmerry_ping_ok"]     = gm.status_code == 200
+    except Exception as exc:
+        result["goingmerry_ping_ok"]    = False
+        result["goingmerry_ping_error"] = str(exc)
 
     # ── ScholarshipAPI.com ────────────────────────────────────────────────────
     result["scholarshipapi_configured"] = bool(sapi_key)
@@ -436,36 +504,23 @@ def api_health():
 
 # ── /api/scholarships  →  multi-source parallel proxy ────────────────────────
 @app.route("/api/scholarships")
-def cos_proxy():
+def scholarships_proxy():
     user_id  = (os.environ.get("CAREERONESTOP_USER_ID") or "").strip()
     token    = (os.environ.get("CAREERONESTOP_TOKEN")   or "").strip()
     sapi_key = (os.environ.get("SCHOLARSHIPAPI_KEY")    or "").strip()
 
-    print(f"[API] /api/scholarships — user_id={'set' if user_id else 'MISSING'}, "
-          f"token={'set' if token else 'MISSING'}")
-
-    if not user_id or not token:
-        msg = ("CareerOneStop credentials not configured. "
-               "Set CAREERONESTOP_USER_ID and CAREERONESTOP_TOKEN in Render env vars.")
-        print(f"[API] ERROR: {msg}")
-        return jsonify({"error": msg}), 503
-
     incoming = dict(request.args)
     keyword  = incoming.get("keyword", "scholarship")
-    print(f"[API] Incoming params: {incoming}")
+    location = incoming.get("location", "")
+    print(f"[API] /api/scholarships keyword={keyword!r} location={location!r} "
+          f"cos={'set' if (user_id and token) else 'no-creds'}")
 
-    # Cache key based on the incoming params (sorted for stability)
-    cache_key = hashlib.md5(
-        json.dumps(sorted(incoming.items())).encode()
-    ).hexdigest()
-
-    cached = _cache_get(cache_key)
+    cache_key = hashlib.md5(json.dumps(sorted(incoming.items())).encode()).hexdigest()
+    cached    = _cache_get(cache_key)
     if cached:
         print(f"[API] Cache hit ({cache_key[:8]})")
-        resp_body = json.dumps(cached)
         return Response(
-            resp_body,
-            status=200,
+            json.dumps(cached), status=200,
             headers={
                 "Content-Type":                "application/json",
                 "Access-Control-Allow-Origin": "*",
@@ -474,11 +529,8 @@ def cos_proxy():
             },
         )
 
-    # Build COS-safe params
-    cos_params = _build_cos_params(incoming)
-
-    print(f"[API] Cache miss — fetching all sources (keyword={keyword!r})")
-    merged, breakdown = _fetch_all(user_id, token, cos_params, sapi_key, keyword)
+    print(f"[API] Cache miss — fetching all sources")
+    merged, breakdown = _fetch_all(user_id, token, keyword, location, sapi_key)
 
     payload = {
         "Scholarships":    merged,
@@ -489,8 +541,7 @@ def cos_proxy():
 
     print(f"[API] Returning {len(merged)} merged results — breakdown: {breakdown}")
     return Response(
-        json.dumps(payload),
-        status=200,
+        json.dumps(payload), status=200,
         headers={
             "Content-Type":                "application/json",
             "Access-Control-Allow-Origin": "*",
