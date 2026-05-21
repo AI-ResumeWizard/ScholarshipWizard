@@ -765,3 +765,15 @@ with tab3:
             render_card(s)
     else:
         st.info("No results. Try loosening the sidebar filters or selecting a preset.")
+
+# ── Attribution footer (required by CareerOneStop terms of use) ───────────────
+st.divider()
+st.markdown(
+    '<p style="font-size:11px;color:#bbb;text-align:center;margin:0;">'
+    'Scholarship data provided by '
+    '<a href="https://www.careeronestop.org/" target="_blank" '
+    'rel="noopener noreferrer" style="color:#bbb;">CareerOneStop</a>, '
+    'sponsored by the U.S. Department of Labor.'
+    '</p>',
+    unsafe_allow_html=True,
+)

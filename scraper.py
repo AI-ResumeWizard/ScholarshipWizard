@@ -551,10 +551,12 @@ def scrape_source(source):
 
 
 # ── API Integrations ──────────────────────────────────────────────────────────
-# Keywords sent to each API (multiple calls, results are deduped)
-_COS_KEYWORDS  = [
-    "artificial intelligence", "machine learning",
-    "technology strategy", "data science", "STEM graduate",
+# Keywords sent to CareerOneStop (matches the 4 documented endpoints)
+_COS_KEYWORDS = [
+    "artificial intelligence",
+    "machine learning",
+    "technology strategy",
+    "STEM graduate",
 ]
 _SAPI_KEYWORDS = [
     "artificial intelligence", "machine learning",
@@ -562,14 +564,15 @@ _SAPI_KEYWORDS = [
 ]
 
 
-def fetch_careeronestop(api_key, user_id):
+def fetch_careeronestop(token, user_id):
     """
     CareerOneStop Scholarship Search (US Dept of Labor — free API).
     Register: https://www.careeronestop.org/Developers/WebAPI/registration.aspx
-    Env vars : CAREERONESTOP_API_KEY, CAREERONESTOP_USER_ID
+    Env vars : CAREERONESTOP_TOKEN, CAREERONESTOP_USER_ID
+    Terms    : results must attribute 'CareerOneStop, sponsored by the U.S. Department of Labor'
     """
-    if not api_key or not user_id:
-        print("  [skip] CareerOneStop: CAREERONESTOP_API_KEY / CAREERONESTOP_USER_ID not set")
+    if not token or not user_id:
+        print("  [skip] CareerOneStop: CAREERONESTOP_TOKEN / CAREERONESTOP_USER_ID not set")
         return []
 
     results = []
@@ -579,12 +582,10 @@ def fetch_careeronestop(api_key, user_id):
         try:
             resp = requests.get(
                 f"https://api.careeronestop.org/v1/scholarship/{user_id}",
-                headers={"Authorization": f"socscode {api_key}"},
+                headers={"Authorization": f"Bearer {token}"},
                 params={
                     "keyword": keyword,
                     "trainingProgramLength": 4,
-                    "sortColumns": "deadline",
-                    "sortOrder": 0,
                     "limit": 100,
                 },
                 timeout=20,
@@ -631,7 +632,7 @@ def fetch_careeronestop(api_key, user_id):
                 "amount":     str(amount)[:80],
                 "deadline":   str(deadline)[:80],
                 "url":        str(url),
-                "source_url": f"https://api.careeronestop.org/v1/scholarship/{user_id}",
+                "source_url": "https://www.careeronestop.org/toolkit/training/find-scholarships.aspx",
                 "raw_text":   f"{title} {provider} {desc}"[:500],
                 "source":     "CareerOneStop",
             })
@@ -1017,6 +1018,10 @@ def build_email(high, medium, low):
       Profile: Wake Forest MS AI Strategy · Michigan · Jewish · OSU alum · 57+ · business/strategy focus<br>
       Scoring: edit <code>score_scholarship()</code> in scraper.py · Curated: edit <code>CURATED</code> list
     </p>
+    <p style="font-size:10px;color:#ccc;text-align:center;margin:10px 0 0;line-height:1.6;">
+      Scholarship data provided by <a href="https://www.careeronestop.org/" style="color:#ccc;">CareerOneStop</a>,
+      sponsored by the U.S. Department of Labor.
+    </p>
   </div>
 </body></html>"""
 
@@ -1059,7 +1064,7 @@ def main(scrape_only=False):
     print("Phase 1b: API integrations...")
     _before = len(raw)
     raw.extend(fetch_careeronestop(
-        os.environ.get("CAREERONESTOP_API_KEY"),
+        os.environ.get("CAREERONESTOP_TOKEN"),
         os.environ.get("CAREERONESTOP_USER_ID"),
     ))
     raw.extend(fetch_scholarshipapi(

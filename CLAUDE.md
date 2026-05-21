@@ -32,9 +32,10 @@ emails an HTML digest every Monday morning via Gmail SMTP.
 - `EMAIL_TO` — recipient email address
 
 ### CareerOneStop API (optional — free, US Dept of Labor)
-- `CAREERONESTOP_API_KEY` — API key from registration
-- `CAREERONESTOP_USER_ID` — user ID assigned at registration
+- `CAREERONESTOP_USER_ID` — user ID assigned at registration (value: fZuVoiU7XC63r1x)
+- `CAREERONESTOP_TOKEN` — Bearer token from registration (set in Render — do not hardcode)
 - Register: https://www.careeronestop.org/Developers/WebAPI/registration.aspx
+- Attribution required by terms: "CareerOneStop, sponsored by the U.S. Department of Labor"
 - If either var is missing the integration is silently skipped
 
 ### ScholarshipAPI.com (optional — free tier)

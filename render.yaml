@@ -12,6 +12,12 @@ services:
         sync: false          # Gmail App Password — NOT your real password
       - key: EMAIL_TO
         sync: false          # Where to send the digest
+      - key: CAREERONESTOP_USER_ID
+        sync: false          # CareerOneStop API user ID
+      - key: CAREERONESTOP_TOKEN
+        sync: false          # CareerOneStop API Bearer token
+      - key: SCHOLARSHIPAPI_KEY
+        sync: false          # ScholarshipAPI.com API key (optional)
 
   - type: web
     name: scholarship-dashboard
@@ -24,6 +30,12 @@ services:
       - key: EMAIL_PASSWORD
         sync: false
       - key: EMAIL_TO
+        sync: false
+      - key: CAREERONESTOP_USER_ID
+        sync: false
+      - key: CAREERONESTOP_TOKEN
+        sync: false
+      - key: SCHOLARSHIPAPI_KEY
         sync: false
     # NOTE: To share scholarships.json between this web service and the cron job,
     # add a Render Disk (Storage tab in the dashboard) mounted at /opt/render/project/src
