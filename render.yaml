@@ -1,0 +1,14 @@
+services:
+  - type: cron
+    name: scholarship-scraper
+    runtime: python
+    schedule: "0 8 * * 1"   # Every Monday at 8am UTC (4am ET)
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scraper.py
+    envVars:
+      - key: EMAIL_FROM
+        sync: false          # Set in Render dashboard
+      - key: EMAIL_PASSWORD
+        sync: false          # Gmail App Password — NOT your real password
+      - key: EMAIL_TO
+        sync: false          # Where to send the digest
